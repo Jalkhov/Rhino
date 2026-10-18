@@ -128,6 +128,10 @@ CI): sin esa firma, quien intercepte una actualización podría apagar el antivi
 El paquete es neutral respecto a la arquitectura; la actualización se sirve por canales
 separados por arquitectura, según la política de arquitectura.
 
+Medición real del paquete `core` (octubre de 2026): 5132 reglas, que tardan 5,4 s en
+compilar y ocupan **8,5 MB** ya compiladas. Ahí está la razón de precompilar en la CI: en
+un equipo modesto eso serían segundos de espera y memoria extra en cada arranque.
+
 ## Interfaz gráfica: Slint
 
 Elegida sobre `egui`, `iced` y las alternativas basadas en web:
@@ -158,9 +162,11 @@ La interfaz vive en su propio crate (`rhino-app`), desacoplada del núcleo
   ejercitan cada capa (EICAR, PE empaquetado, sección ejecutable-escribible, PE truncado).
   Como Rhino es un escáner *estático* y nunca ejecuta lo que analiza, el proyecto **no
   necesita descargar ni almacenar malware real** para probar el motor.
-- **Falsos positivos:** `cargo run -p rhino-core --example scan_dir -- <directorio>` mide la
-  métrica que decide si un antivirus es usable. Punto de partida actual: 0 detecciones
-  sobre 2394 binarios de `/usr/bin`.
+- **Falsos positivos:** `cargo run -p rhino-core --example scan_dir -- <directorio> [reglas.yar]`
+  mide la métrica que decide si un antivirus es usable. Con las capas 1 y 3: 0 detecciones
+  sobre 2394 binarios de `/usr/bin`. Con el paquete real de YARA Forge (5137 reglas) sale
+  **una**: la regla de *hacktool* «socat» marca a `socat1`, una herramienta legítima de
+  doble uso. Un falso positivo de la clase esperable, no un fallo del motor.
 
 ## Estado
 
@@ -179,19 +185,26 @@ Primera rebanada, ya funcionando:
 - `rhino-core`: hashing SHA-256 por *streaming* (búfer fijo de 64 KiB, nunca carga el
   archivo completo en memoria) y lector mínimo de cabeceras PE con lecturas acotadas.
 - `scan()` devuelve un informe estructurado (`ScanReport`) con el veredicto y la lista de
-  hallazgos, y **nombra la capa** que detectó cada uno: capa 1 (hash conocido) y capa 3
-  (heurística propia: secciones de empaquetador y secciones ejecutables-escribibles).
+  hallazgos, y **nombra la capa** que detectó cada uno: capa 1 (hash conocido), capa 2
+  (reglas YARA-X) y capa 3 (heurística propia: secciones de empaquetador y secciones
+  ejecutables-escribibles).
+- Motor YARA-X integrado (`RuleSet::compile` / `RuleSet::from_compiled`, este último para
+  las reglas precompiladas) con solo los módulos que el ruleset real usa. Cada hallazgo de
+  regla lleva autor y URL de origen, que es lo que exige la licencia DRL 1.1.
 - La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
   aparte (la ventana no se congela) y el resultado aparece en pantalla.
 - `scan_dir()` recorre un directorio completo sin seguir enlaces simbólicos y omitiendo lo
   ilegible; el ejemplo `scan_dir` mide falsos positivos sobre binarios reales.
 - Corpus sintético reutilizable en `rhino_core::corpus`, compartido por las pruebas
   unitarias y las de integración.
-- Pruebas: 23 en total. Unitarias, más integración sobre archivos reales en disco,
+- Pruebas: 33 en total. Unitarias, más integración sobre archivos reales en disco,
   incluidos el archivo de prueba EICAR (inofensivo) y ejecutables sintéticos.
 
-Pendiente de esta fase: el motor YARA-X (capa 2), más heurísticas (entropía, macros) y el
-paquete de base de datos firmado con su actualizador.
+Pendiente de esta fase: más heurísticas (entropía, macros), el paquete de base de datos
+firmado con su actualizador y el trabajo automático que lo construye. Al armar el paquete
+conviene filtrar las reglas por etiqueta `FILE`: las etiquetadas `MEMORY` y `LOG` no
+aplican a archivos en disco, y hay 627 reglas sin etiqueta ninguna cuya eliminación hay
+que decidir con cuidado, porque perdería detecciones.
 
 ## Compilación cruzada
 

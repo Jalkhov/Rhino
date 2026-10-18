@@ -6,10 +6,12 @@
 pub mod corpus;
 mod hash;
 mod pe;
+pub mod rules;
 mod scan;
 
 pub use hash::{sha256_hex, sha256_hex_reader};
 pub use pe::{PeFile, PeSection};
+pub use rules::{RuleMatch, RuleSet};
 pub use scan::{FileKind, Finding, Layer, ScanReport, Verdict, scan_bytes, scan_dir, scan_file};
 
 /// Versión del núcleo, tomada de `Cargo.toml`.

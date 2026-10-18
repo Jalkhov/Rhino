@@ -5,3 +5,21 @@ edition.workspace = true
 
 [dependencies]
 sha2 = "0.10"
+# Motor de la capa 2. Se listan los módulos que el paquete `core` de YARA Forge
+# usa de verdad (comprobado en su release): así quedan fuera `cuckoo` (que
+# arrastra wasmtime), `macho`, `dex`, `crx`, `math` y `vt`. `generate-proto-code`
+# viene activado por defecto y exige `protoc`; no lo necesitamos.
+yara-x = { version = "1.21.0", default-features = false, features = [
+    "constant-folding",
+    "exact-atoms",
+    "fast-regexp",
+    "console-module",
+    "dotnet-module",
+    "elf-module",
+    "hash-module",
+    "lnk-module",
+    "pe-module",
+    "string-module",
+    "time-module",
+    "zip-module",
+] }
