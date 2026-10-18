@@ -324,8 +324,11 @@ Primera rebanada, ya funcionando:
   ejecutables sintéticos), sobre firmas manipuladas, y sobre el actualizador contra un
   servidor HTTP local de prueba.
 
-Pendiente de esta fase: publicar el primer paquete real desde el sitio de `web/` y volver a
-activar la integración continua cuando la cuenta de GitHub quede libre.
+Pendiente de esta fase: nada del motor ni del paquete. El primer paquete real ya está
+publicado y sirviéndose desde el sitio de `web/`, y el circuito completo (descargar, verificar
+la firma, instalar, y no volver a bajar nada si ya está al día) está probado contra él. Quedan
+los ejecutables en el sitio (`web/public/app/` está vacía) y reactivar la integración continua
+cuando la cuenta de GitHub quede libre.
 
 Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
 
@@ -340,10 +343,9 @@ Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
   cabeceras.
 - **No hay heurística de macros de Office propia.** El paquete de YARA Forge ya cubre el
   malware de Office; duplicarlo añadiría falsos positivos sin añadir detecciones.
-- **El actualizador de red está aplazado.** Sin servidor donde alojar los paquetes no se
-  puede probar, y publicar código no probado en una frontera de seguridad (actualizaciones
-  verificadas por firma) es peor que no tenerlo. Lo construido es la mitad riesgosa y
-  probable: formato, firma, verificación por hash y carga.
+- **El sitio de pruebas no tiene TLS.** Es HTTP en local, suficiente para probar; en
+  producción habrá que servirlo por HTTPS, porque el manifiesto viaja firmado pero una red
+  sin cifrar deja ver qué descarga el usuario.
 
 ## Compilación cruzada
 
