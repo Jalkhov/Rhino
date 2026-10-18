@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pruebas:
+    name: Pruebas y estilo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formato
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Pruebas
+        run: cargo test --workspace
+
+  windows:
+    name: Windows ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 32 bits (x86)
+            target: i686-pc-windows-msvc
+            xwin_arch: x86
+          - name: 64 bits (x64)
+            target: x86_64-pc-windows-msvc
+            xwin_arch: x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Herramientas de compilacion cruzada
+        run: |
+          cargo install cargo-xwin --locked
+          # rust-lld es multicall: enlazado con el nombre lld-link enlaza PE.
+          # clang-cl entra en modo CL por el nombre del ejecutable, asi que un
+          # enlace al clang del runner basta y no dependemos de sus paquetes.
+          mkdir -p "$HOME/.cargo/bin"
+          command -v lld-link >/dev/null ||
+            ln -sf "$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld" "$HOME/.cargo/bin/lld-link"
+          command -v clang-cl >/dev/null ||
+            ln -sf "$(command -v clang)" "$HOME/.cargo/bin/clang-cl"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # El SDK de Windows pesa ~1 GB. Sin esta cache se descarga en cada push.
+      - name: Cache del SDK de Windows
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/cargo-xwin
+          key: xwin-${{ matrix.xwin_arch }}-v1
+
+      - name: Compilar
+        env:
+          # El default de cargo-xwin no incluye las librerias de 32 bits.
+          XWIN_ARCH: ${{ matrix.xwin_arch }}
+        run: cargo xwin build --release --target ${{ matrix.target }}
+
+      - name: Comprobar que es un ejecutable de Windows
+        run: file "target/${{ matrix.target }}/release/rhino-app.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rhino-app-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/rhino-app.exe

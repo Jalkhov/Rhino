@@ -1,0 +1,5 @@
+# Fija la version de Rust para que el desarrollo y la CI no diverjan.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy", "rustfmt"]
+targets = ["i686-pc-windows-msvc", "x86_64-pc-windows-msvc"]

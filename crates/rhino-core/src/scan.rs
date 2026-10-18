@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::{self, Cursor, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::db::{Database, HashList};
+use crate::db::Database;
 use crate::hash::{sha256_hex, sha256_hex_reader};
 use crate::pe::{self, PeFile};
 use crate::rules::{RuleMatch, RuleSet, SCORE_MALICIOUS};
@@ -85,12 +85,19 @@ pub struct ScanReport {
     pub kind: FileKind,
     pub verdict: Verdict,
     pub findings: Vec<Finding>,
+    /// Versión del paquete con el que se analizó, o `None` si se escaneó sin base
+    /// de datos: entonces no se aplicaron ni los hashes ni las reglas.
+    pub database: Option<String>,
 }
 
 impl ScanReport {
     /// Texto corto y de una sola pieza para la interfaz.
     pub fn summary(&self) -> String {
         let mut text = format!("{}: {}", self.file_name(), self.verdict.label());
+        // «Limpio» sin base de datos no significa lo mismo que «limpio» con ella.
+        if self.database.is_none() {
+            text.push_str(" (sin base de datos: no se comprobaron hashes ni reglas)");
+        }
         for finding in &self.findings {
             text.push_str(&format!(
                 "\n• [{}] {}",
@@ -139,7 +146,7 @@ pub fn scan_file(path: impl AsRef<Path>, database: &Database) -> io::Result<Scan
         sha256,
         kind,
         rule_findings,
-        database.hashes(),
+        database,
     ))
 }
 
@@ -200,7 +207,7 @@ pub fn scan_bytes(name: &str, data: &[u8], database: &Database) -> ScanReport {
         sha256_hex(data),
         kind,
         rule_findings,
-        database.hashes(),
+        database,
     )
 }
 
@@ -210,11 +217,11 @@ fn build_report(
     sha256: String,
     kind: FileKind,
     rule_findings: Vec<Finding>,
-    hashes: &HashList,
+    database: &Database,
 ) -> ScanReport {
     let mut findings = Vec::new();
 
-    if hashes.contains_hex(&sha256) {
+    if database.hashes().contains_hex(&sha256) {
         findings.push(Finding {
             layer: Layer::Hash,
             name: "Hash conocido".to_string(),
@@ -242,6 +249,11 @@ fn build_report(
         kind,
         verdict,
         findings,
+        database: if database.is_empty() {
+            None
+        } else {
+            Some(database.version().unwrap_or("sin versión").to_string())
+        },
     }
 }
 
@@ -334,6 +346,7 @@ fn rule_finding(matched: &RuleMatch) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HashList;
     use crate::corpus::{
         EICAR_TEXT, benign_pe, benign_text, eicar, eicar_sha256, packed_pe, truncated_pe,
         writable_executable_pe,
@@ -512,6 +525,21 @@ rule rhino_test_eicar {
         );
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_report_without_a_database_says_so() {
+        let sin_base = scan_bytes("eicar.com", &eicar(), &Database::empty());
+        assert_eq!(sin_base.database, None);
+        assert!(
+            sin_base.summary().contains("sin base de datos"),
+            "un «limpio» sin base de datos debe avisarlo: {}",
+            sin_base.summary()
+        );
+
+        let con_base = scan_bytes("notas.txt", &benign_text(), &test_database());
+        assert!(con_base.database.is_some());
+        assert!(!con_base.summary().contains("sin base de datos"));
     }
 
     #[test]

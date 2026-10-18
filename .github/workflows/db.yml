@@ -1,0 +1,51 @@
+name: Base de datos
+
+on:
+  schedule:
+    # Domingos a las 04:00 UTC: YARA Forge publica sus paquetes semanalmente.
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  paquete:
+    name: Construir, firmar y verificar el paquete
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Descargar el paquete core de YARA Forge
+        run: |
+          mkdir -p yf
+          # Sin autenticar: el token del workflow solo alcanza este repositorio.
+          url=$(curl -sSL https://api.github.com/repos/YARAHQ/yara-forge/releases/latest |
+            jq -r '.assets[].browser_download_url' | grep -i core | head -1)
+          echo "descargando $url"
+          curl -sSL -o yf/core.zip "$url"
+          unzip -q -o yf/core.zip -d yf
+
+      - name: Construir, firmar y verificar
+        env:
+          RHINO_DB_KEY: ${{ secrets.RHINO_DB_KEY }}
+        run: |
+          if [ -z "$RHINO_DB_KEY" ]; then
+            echo "Falta el secreto RHINO_DB_KEY: la clave privada de firma de la base de datos." >&2
+            exit 1
+          fi
+          echo "$RHINO_DB_KEY" > "$RUNNER_TEMP/db-key"
+          RULES=$(find yf -name 'yara-rules-core.yar' | head -1)
+          cargo run --release -p rhino-db -- build \
+            --rules "$RULES" --out paquete --channel stable --key "$RUNNER_TEMP/db-key"
+          # verify usa la clave publica compilada en Rhino: si no coincide con la
+          # que firmo, el paquete no sirve para nada y hay que enterarse aqui.
+          cargo run --release -p rhino-db -- verify --package paquete
+          rm -f "$RUNNER_TEMP/db-key"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rhino-db
+          path: paquete/

@@ -263,6 +263,11 @@ impl Database {
     pub fn version(&self) -> Option<&str> {
         self.version.as_deref()
     }
+
+    /// Un paquete vacío no aporta ninguna capa: ni hashes ni reglas.
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty() && self.hashes.is_empty()
+    }
 }
 
 /// Lista de hashes conocido-malo, ordenada para búsqueda binaria.
