@@ -43,4 +43,4 @@ rm -rf "$anterior"
 
 echo
 echo "publicado en web/public/db/$canal/ ($(du -sh "$destino" | cut -f1))"
-echo "para probarlo: cargo run -p rhino-db -- update http://localhost:8080/db/$canal <directorio>"
+echo "para probarlo: cargo run -p rhino-db -- update http://localhost:27182/db/$canal <directorio>"

@@ -389,7 +389,7 @@ las compilaciones sigan siendo reproducibles cuando el CI vuelva.
 ## Sitio
 
 `web/` es el sitio del que Rhino descarga su base de datos firmada y sus ejecutables. Se sirve
-en local con `web/serve.sh` (`http://localhost:8080`) y queda permanente como servicio de
+en local con `web/serve.sh` (`http://localhost:27182`) y queda permanente como servicio de
 usuario (`web/systemd/rhino-web.service`).
 
 Vive dentro del repositorio, y no en uno aparte, porque existe solo para servir lo que produce

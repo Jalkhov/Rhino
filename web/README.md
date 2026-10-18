@@ -33,7 +33,7 @@ que se regeneran. Lo que se versiona es la estructura y los guiones.
 ## Servirlo
 
 ```sh
-web/serve.sh              # http://localhost:8080
+web/serve.sh              # http://localhost:27182
 web/serve.sh 9000         # otro puerto
 ```
 
@@ -90,11 +90,11 @@ pueda distinguirlos.
 Con el sitio levantado, cualquier Rhino puede apuntar a él:
 
 ```sh
-RHINO_DB_URL=http://localhost:8080/db/stable cargo run -p rhino-app
+RHINO_DB_URL=http://localhost:27182/db/stable cargo run -p rhino-app
 ```
 
 O instalar el paquete directamente, sin pasar por la aplicación:
 
 ```sh
-cargo run -p rhino-db -- update http://localhost:8080/db/stable ~/.local/share/rhino/rhino-db
+cargo run -p rhino-db -- update http://localhost:27182/db/stable ~/.local/share/rhino/rhino-db
 ```

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-puerto="${1:-8080}"
+puerto="${1:-27182}"
 
 # El servidor necesita que las carpetas existan aunque todavía no se haya
 # publicado nada; así la página puede decir "no hay paquete" en vez de fallar.
