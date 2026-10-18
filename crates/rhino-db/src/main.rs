@@ -81,8 +81,9 @@ fn keygen(path: Option<&String>) -> Result<(), String> {
     println!("clave privada: {}", path.display());
     println!("clave pública: {}", to_hex(&key.verifying_key().to_bytes()));
     println!(
-        "\nLa privada no se versiona: va a los secretos de la CI.\n\
-         La pública se copia en DB_PUBLIC_KEY (crates/rhino-core/src/db.rs)."
+        "\nLa privada no se versiona y conviene respaldarla fuera del equipo: si se\n\
+         pierde, no se pueden firmar más paquetes. La pública se copia en\n\
+         DB_PUBLIC_KEY (crates/rhino-core/src/db.rs)."
     );
     Ok(())
 }

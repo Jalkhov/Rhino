@@ -283,14 +283,15 @@ Primera rebanada, ya funcionando:
   real: sin base de datos, el EICAR salía «limpio». Ahora el informe lo dice de forma
   explícita («sin base de datos: no se comprobaron hashes ni reglas») y el veredicto nunca
   finge haber mirado lo que no pudo mirar.
-- Integración continua en GitHub Actions: `ci.yml` (estilo, pruebas y compilación cruzada a
-  32 y 64 bits) y `db.yml` (paquete semanal firmado). Ver "Integración continua".
+- Los flujos de integración continua están escritos pero **desactivados** (ver "Integración
+  continua"), así que el paquete de base de datos se construye a mano con
+  `scripts/update-db.sh`.
 - Pruebas: 54 en total (45 unitarias del núcleo, 4 del constructor del paquete y 5 de
   integración), incluidas pruebas sobre archivos reales en disco (el EICAR inofensivo y
   ejecutables sintéticos) y sobre firmas manipuladas.
 
-Pendiente de esta fase: la pareja de claves real (ver "Riesgos conocidos") y el actualizador
-de red que descarga los paquetes ya firmados.
+Pendiente de esta fase: el actualizador de red que descarga los paquetes ya firmados, y
+publicar el primer paquete real con la clave nueva.
 
 Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
 
@@ -324,25 +325,31 @@ XWIN_ARCH=x86 cargo xwin build --release --target i686-pc-windows-msvc
 sirve, enlazado con ese nombre). La primera compilación descarga el SDK de Windows
 (~1 GB) y queda en caché.
 
-## Integración continua
+## Integración continua (desactivada por ahora)
 
-Dos flujos en `.github/workflows/`, más `rust-toolchain.toml`, que fija la versión de Rust
-(1.98.1), los componentes y los dos targets de Windows para que desarrollo y CI no diverjan.
+Los flujos están escritos y listos en `ci/`, pero **no se ejecutan**: la cuenta de GitHub está
+bloqueada por una deuda, así que se sacaron de `.github/workflows/` para que nada falle en
+cada `push`. Para reactivarlos basta devolverlos a su sitio; las instrucciones están en
+`ci/README.md`.
 
-- **`ci.yml`** — en cada `push` a `main`, en cada *pull request* y a mano. Un trabajo
-  comprueba el formato (`cargo fmt --check`), `clippy` con los avisos como errores y las
-  pruebas. Otro compila en cruzado para Windows con una matriz de dos entradas (32 y 64 bits)
+- **`ci/ci.yml`** — formato (`cargo fmt --check`), `clippy` con los avisos como errores y las
+  pruebas, más la compilación cruzada a Windows con una matriz de dos entradas (32 y 64 bits)
   y `fail-fast: false`, para que un fallo en una arquitectura no oculte el estado de la otra.
   Cachea el SDK de Windows: sin esa caché, cada ejecución descargaría ~1 GB.
-- **`db.yml`** — los domingos a las 04:00 UTC (YARA Forge publica semanalmente) y a mano.
-  Descarga el paquete `core`, construye el paquete de Rhino, lo firma con el secreto
-  `RHINO_DB_KEY` y lo **verifica con la clave pública compilada dentro de Rhino**. Este
-  último paso es el importante: impide publicar un paquete que los usuarios no podrían
-  aceptar. Si el secreto no está definido, el flujo **falla a propósito** en vez de producir
-  un paquete inservible.
+- **`ci/db.yml`** — el paquete semanal (domingos 04:00 UTC): descarga el `core` de YARA Forge,
+  lo firma y lo **verifica con la clave pública compilada dentro de Rhino**. Ese paso es el
+  importante: impide publicar un paquete que los usuarios no podrían aceptar.
 
-Las compilaciones cruzadas usan `cargo-xwin` y enlazan `lld-link` y `clang-cl` sobre lo que el
-runner ya trae (`rust-lld` sirve como enlazador porque es *multicall*).
+Mientras no haya CI, el paquete de base de datos se construye a mano:
+
+```sh
+scripts/update-db.sh ~/.config/rhino/db-key
+```
+
+El script descarga el último `core`, construye el paquete en `db-package/` y lo verifica con
+la clave pública compilada, que es el mismo control que aplicará el usuario final.
+`rust-toolchain.toml` fija Rust 1.98.1, los componentes y los dos targets de Windows, para que
+las compilaciones sigan siendo reproducibles cuando el CI vuelva.
 
 ## Entorno de OpenCode
 
@@ -360,10 +367,10 @@ runner ya trae (`rust-lld` sirve como enlazador porque es *multicall*).
 
 ## Riesgos conocidos
 
-- **La clave pública de la base de datos sigue a ceros** (`DB_PUBLIC_KEY` en `db.rs`), así que
-  hoy ningún paquete real verifica. Es deliberado: falta generar la pareja, guardar la mitad
-  privada como secreto `RHINO_DB_KEY` de GitHub Actions y pegar la pública en `db.rs`. Hasta
-  entonces `db.yml` no puede producir un paquete utilizable.
+- **La clave privada de firma vive solo en este equipo**, en `~/.config/rhino/db-key`
+  (permisos 600) y sin respaldo remoto. Si se pierde, no se pueden firmar más paquetes y habría
+  que publicar una versión nueva con otra clave pública. Conviene copiarla a un gestor de
+  contraseñas o a un medio aparte.
 - **El conjunto de reglas cargado cuesta unos 52 MB de RAM**, y crece con el número de
   reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino: cada ampliación
   de la base de datos mueve esa cifra y conviene volver a medirla.
