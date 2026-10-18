@@ -59,6 +59,75 @@ Elegido sobre Go por cuatro razones que atacan directo los objetivos del proyect
    Microsoft, da bindings seguros a toda la API Win32. Y a diferencia de Go, Rust puede
    escribir drivers de kernel (minifiltros) si una fase futura lo requiere.
 
+## Motor de detección y base de datos
+
+**El motor de patrones no se escribe desde cero.** Es
+[YARA-X](https://github.com/VirusTotal/yara-x) (licencia BSD-3-Clause), la reescritura
+de YARA en Rust que VirusTotal tiene en producción escaneando miles de millones de
+archivos. Lo propio de Rhino es el orquestador de escaneo, el formato del paquete de
+base de datos, el actualizador, la heurística propia y la interfaz.
+
+### Capas de detección
+
+Las firmas son solo una de varias capas:
+
+| Capa | Qué detecta | Coste | Depende de |
+| --- | --- | --- | --- |
+| 1. Hash exacto | Malware ya conocido (IOC) | Muy bajo | Listas de hashes |
+| 2. Firmas YARA-X | Familias, herramientas de ataque, webshells, exploits | Bajo | YARA Forge |
+| 3. Heurística propia | PE anómalo, packers, entropía alta, macros sospechosas | Medio | Solo Rhino |
+| 4. Comportamiento (futuro) | Acciones en ejecución, en modo usuario | — | Solo Rhino |
+| 5. ML / reputación (futuro) | — | — | — |
+
+La capa 3 es la diferencia real: es la única donde Rhino aporta detección propia y no
+depende de terceros.
+
+### De dónde salen las firmas
+
+De **YARA Forge** ([`YARAHQ/yara-forge`](https://github.com/YARAHQ/yara-forge)), un
+proyecto que recolecta reglas de más de 45 repositorios de seguridad, las normaliza, las
+prueba contra falsos positivos, las puntúa (0–100) y publica **paquetes semanales** en
+tres niveles: `core` (alta calidad, bajo falso positivo), `extended` y `full`. Es lo que
+usan productos comerciales como THOR.
+
+Un trabajo automático en la CI haría el resto: descargar el release semanal, filtrar las
+reglas con licencia copyleft, compilar con `yr compile`, armar el paquete, firmarlo y
+publicarlo. Sin trabajo manual y sin laboratorio de malware propio.
+
+### Licencias
+
+Se consumen **solo fuentes permisivas**: YARA Forge `core` (mezcla de DRL 1.1, BSD y
+Apache 2.0), y repositorios como Signature Base y SEKOIA.IO (DRL 1.1, que permite el uso
+comercial con atribución). Quedan descartadas las reglas GPL (Yara-Rules/rules, CAPE
+Sandbox) y la base de datos de ClamAV (GPL), que obligarían a que todo Rhino fuese GPL y
+enredarían la compatibilidad con Slint (GPLv3 o comercial).
+
+Esto mantiene a Rhino libre para ser abierto o cerrado cuando se decida.
+
+**Consecuencia obligatoria:** la licencia DRL 1.1 exige que el mensaje de detección
+nombre al autor de la regla. La interfaz debe poder mostrar *"Detectado por la regla X,
+autor Y, fuente Z"*.
+
+### Paquete de base de datos
+
+```
+rhino-db-AAAA.MM.DD/
+  manifest.json   versión, fecha, canal, conteos y hash de cada archivo
+  meta.json       por regla: autor, fuente, licencia, URL original
+  rules.yarc      reglas YARA-X precompiladas
+  hashes.bin      hashes conocido-malo (capa 1)
+  manifest.sig    firma Ed25519 del manifest
+```
+
+Las reglas se compilan **una sola vez, en la CI**, nunca en el equipo del usuario:
+compilar miles de reglas al arrancar cuesta segundos y mucha memoria en una máquina
+modesta, mientras que cargar un archivo precompilado cuesta casi nada. El paquete va
+firmado con Ed25519 (clave pública dentro de Rhino, privada solo en los secretos de la
+CI): sin esa firma, quien intercepte una actualización podría apagar el antivirus.
+
+El paquete es neutral respecto a la arquitectura; la actualización se sirve por canales
+separados por arquitectura, según la política de arquitectura.
+
 ## Interfaz gráfica: Slint
 
 Elegida sobre `egui`, `iced` y las alternativas basadas en web:
@@ -90,9 +159,28 @@ La interfaz vive en su propio crate (`rhino-app`), desacoplada del núcleo
 
 **Fase 1 (investigación) — completada.** Lenguaje: Rust. Interfaz: Slint.
 
-**Fase 2 (entorno y esqueleto) — en curso.** Workspace de Cargo con `rhino-core`
-(núcleo agnóstico) y `rhino-app` (interfaz Slint). Compilación cruzada a
-`i686-pc-windows-msvc` operativa.
+**Fase 2 (entorno y esqueleto) — completada.** Workspace de Cargo con `rhino-core`
+(núcleo agnóstico) y `rhino-app` (interfaz Slint), con pruebas unitarias. Compilación
+cruzada a `i686-pc-windows-msvc` operativa y verificada (el binario resultante es un
+PE32 de GUI para i386). Repositorio publicado en privado.
+
+**Fase 3 (motor de escaneo) — en curso.** Arquitectura de detección y base de datos
+definidas en la sección "Motor de detección y base de datos".
+
+Primera rebanada, ya funcionando:
+
+- `rhino-core`: hashing SHA-256 por *streaming* (búfer fijo de 64 KiB, nunca carga el
+  archivo completo en memoria) y lector mínimo de cabeceras PE con lecturas acotadas.
+- `scan()` devuelve un informe estructurado (`ScanReport`) con el veredicto y la lista de
+  hallazgos, y **nombra la capa** que detectó cada uno: capa 1 (hash conocido) y capa 3
+  (heurística propia: secciones de empaquetador y secciones ejecutables-escribibles).
+- La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
+  aparte (la ventana no se congela) y el resultado aparece en pantalla.
+- Pruebas: 20 en total. Unitarias, más integración sobre archivos reales en disco,
+  incluido el archivo de prueba EICAR (inofensivo) y archivos benignos.
+
+Pendiente de esta fase: el motor YARA-X (capa 2), más heurísticas (entropía, macros) y el
+paquete de base de datos firmado con su actualizador.
 
 ## Compilación cruzada
 
@@ -116,8 +204,8 @@ sirve, enlazado con ese nombre). La primera compilación descarga el SDK de Wind
 ## Fases (tentativo, sin apurar)
 
 - [x] Fase 1 — Investigación y decisión de lenguaje (Rust, Slint).
-- [ ] Fase 2 — Entorno de compilación cruzada Ubuntu → Windows (i686 y x64) y esqueleto del proyecto.
-- [ ] Fase 3 — Núcleo de escaneo (motor de firmas YARA-X, hashes).
+- [x] Fase 2 — Entorno de compilación cruzada Ubuntu → Windows (i686 y x64) y esqueleto del proyecto.
+- [ ] Fase 3 — Núcleo de escaneo (hashes, motor YARA-X, heurística propia y paquete de base de datos).
 - [ ] Fase 4 — Interfaz de usuario intuitiva y liviana.
 - [ ] Fase 5 — Protección en tiempo real en modo usuario (sin driver).
 - [ ] Fase 6 — Endurecimiento anti-ingeniería-inversa y empaquetado.
