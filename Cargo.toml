@@ -9,6 +9,8 @@ edition = "2024"
 [profile.release]
 lto = true
 codegen-units = 1
-panic = "abort"
+# A propósito sin `panic = "abort"`: el motor interpreta archivos hostiles, así
+# que un pánico debe poder capturarse archivo por archivo (ver `scan::isolate`).
+# Con `abort`, un solo archivo raro tumbaría el proceso entero.
 strip = true
 opt-level = "s"

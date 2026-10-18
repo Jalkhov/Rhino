@@ -21,6 +21,8 @@ pub enum Layer {
     Rules,
     /// Capa 3: heurística propia sobre la estructura del archivo.
     Heuristic,
+    /// El archivo no se pudo analizar: el motor entró en pánico con él.
+    Internal,
 }
 
 impl Layer {
@@ -29,6 +31,7 @@ impl Layer {
             Layer::Hash => "hash conocido",
             Layer::Rules => "regla",
             Layer::Heuristic => "heurística",
+            Layer::Internal => "error interno",
         }
     }
 }
@@ -128,26 +131,66 @@ pub fn scan_file(path: impl AsRef<Path>, database: &Database) -> io::Result<Scan
     let sha256 = sha256_hex_reader(&mut file)?;
     // Hashear deja el cursor al final; el parseo PE empieza por la cabecera.
     file.seek(SeekFrom::Start(0))?;
-    let kind = match pe::parse(&mut file)? {
-        Some(image) => FileKind::Pe(image),
-        None => FileKind::Other,
+
+    // Solo la interpretación del contenido puede entrar en pánico: ni abrir ni
+    // hashear dependen de lo que el archivo diga. Aislarla es lo que permite que
+    // un archivo raro no tumbe el escaneo entero.
+    let analysed = isolate(|| -> io::Result<(FileKind, Vec<Finding>)> {
+        let kind = match pe::parse(&mut file)? {
+            Some(image) => FileKind::Pe(image),
+            None => FileKind::Other,
+        };
+
+        let rules = database.rules();
+        let findings = if rules.is_empty() {
+            Vec::new()
+        } else {
+            rule_findings_for_path(path, rules)
+        };
+
+        Ok((kind, findings))
+    });
+
+    let (kind, findings) = match analysed {
+        Ok(analysed) => analysed?,
+        Err(message) => (FileKind::Other, vec![internal_error(message)]),
     };
 
-    let rules = database.rules();
-    let rule_findings = if rules.is_empty() {
-        Vec::new()
-    } else {
-        rule_findings_for_path(path, rules)
-    };
+    Ok(build_report(path, size, sha256, kind, findings, database))
+}
 
-    Ok(build_report(
-        path,
-        size,
-        sha256,
-        kind,
-        rule_findings,
-        database,
-    ))
+/// Ejecuta `work` aislando cualquier pánico y devolviendo su mensaje.
+///
+/// El motor interpreta archivos que el usuario no escribió, y ClamAV lleva años
+/// demostrando que ahí está la superficie de ataque real: casi todos sus CVE son
+/// parsers que caen con una entrada manipulada. Rust elimina la corrupción de
+/// memoria, pero no el pánico, así que aquí se captura.
+///
+/// shortcut: aísla el pánico pero no repara el estado del motor; si aparece un
+/// pánico reproducible habrá que mover el análisis a un proceso aparte.
+fn isolate<T>(work: impl FnOnce() -> T) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).map_err(|payload| {
+        if let Some(text) = payload.downcast_ref::<&str>() {
+            (*text).to_string()
+        } else if let Some(text) = payload.downcast_ref::<String>() {
+            text.clone()
+        } else {
+            "causa desconocida".to_string()
+        }
+    })
+}
+
+/// Hallazgo de un archivo que no se pudo analizar.
+///
+/// Se marca sospechoso y no limpio: no haber podido mirar no es prueba de
+/// inocencia, y un antivirus que falla hacia "limpio" es peor que no tenerlo.
+fn internal_error(message: String) -> Finding {
+    Finding {
+        layer: Layer::Internal,
+        name: "Archivo no analizado".to_string(),
+        detail: format!("el motor entró en pánico: {message}"),
+        verdict: Verdict::Suspicious,
+    }
 }
 
 /// Analiza recursivamente todos los archivos de un directorio, entregando cada
@@ -566,5 +609,26 @@ rule rhino_test_eicar {
         );
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn isolate_returns_the_value_when_nothing_panics() {
+        assert_eq!(isolate(|| 42), Ok(42));
+    }
+
+    #[test]
+    fn isolate_turns_a_panic_into_a_message() {
+        let caught = isolate(|| -> u8 { panic!("entrada hostil") });
+
+        assert_eq!(caught, Err("entrada hostil".to_string()));
+    }
+
+    #[test]
+    fn an_unanalysed_file_is_suspicious_never_clean() {
+        let finding = internal_error("entrada hostil".to_string());
+
+        assert_eq!(finding.layer, Layer::Internal);
+        assert_eq!(finding.verdict, Verdict::Suspicious);
+        assert!(finding.detail.contains("entrada hostil"));
     }
 }

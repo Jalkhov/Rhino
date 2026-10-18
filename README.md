@@ -229,6 +229,27 @@ falla a mitad, el paquete viejo vuelve a su sitio. Nunca existe un estado interm
 La URL base se configura con la variable de entorno `RHINO_DB_URL` (`update::configured_url()`)
 porque todavía no hay servidor público: el sitio que aloja los paquetes vive en `web/`.
 
+### Robustez
+
+El motor come archivos que el usuario no escribió, y la historia de ClamAV lo dice con
+claridad: casi todos sus CVE críticos son parsers de formato y descompresores que caen o se
+salen de los límites con una entrada manipulada, no fallos del motor de firmas. Rust cierra la
+corrupción de memoria, que es la mayoría de esos casos, pero no el pánico, el desbordamiento
+silencioso ni el bucle infinito.
+
+Tres defensas, de dentro hacia fuera:
+
+- **Lecturas acotadas.** El lector PE lee solo cabeceras y como mucho 96 secciones, aunque la
+  cabecera declare otra cosa. Ninguna capa carga el archivo entero en memoria.
+- **Pruebas de propiedad** (`proptest`, solo como dependencia de desarrollo, así que no entra
+  en el binario): bytes arbitrarios y ejecutables válidos mutados no pueden hacer entrar en
+  pánico al lector, y el veredicto nunca puede decir «limpio» mientras un hallazgo diga otra
+  cosa.
+- **Aislamiento del pánico.** El perfil de release usa `unwind` a propósito y cada archivo se
+  analiza dentro de `scan::isolate`: uno que haga caer al motor se reporta como *no analizado*
+  (sospechoso) en vez de llevarse por delante el escaneo entero. Un archivo que no se pudo
+  mirar nunca se reporta como limpio.
+
 ## Interfaz gráfica: Slint
 
 Elegida sobre `egui`, `iced` y las alternativas basadas en web:
@@ -316,13 +337,16 @@ Primera rebanada, ya funcionando:
   real: sin base de datos, el EICAR salía «limpio». Ahora el informe lo dice de forma
   explícita («sin base de datos: no se comprobaron hashes ni reglas») y el veredicto nunca
   finge haber mirado lo que no pudo mirar.
+- **Aislamiento del pánico:** el perfil de release usa `unwind` a propósito y cada archivo se
+  analiza dentro de `scan::isolate`. Uno que haga caer al lector PE o a YARA-X se reporta como
+  *no analizado* (sospechoso), en vez de llevarse por delante el escaneo entero.
 - Los flujos de integración continua están escritos pero **desactivados** (ver "Integración
   continua"), así que el paquete de base de datos se construye y publica a mano con
   `web/tools/publish-db.sh`.
-- Pruebas: 61 en total (52 unitarias del núcleo, 4 del constructor del paquete y 5 de
-  integración), incluidas pruebas sobre archivos reales en disco (el EICAR inofensivo y
-  ejecutables sintéticos), sobre firmas manipuladas, y sobre el actualizador contra un
-  servidor HTTP local de prueba.
+- Pruebas: 73 en total (58 unitarias del núcleo, 4 del constructor del paquete, 6 de
+  propiedades y 5 de integración), incluidas pruebas sobre archivos reales en disco (el EICAR
+  inofensivo y ejecutables sintéticos), sobre firmas manipuladas, sobre el actualizador contra
+  un servidor HTTP local de prueba, y de propiedades sobre los parsers.
 
 Pendiente de esta fase: nada del motor ni del paquete. El primer paquete real ya está
 publicado y sirviéndose desde el sitio de `web/`, y el circuito completo (descargar, verificar
@@ -422,11 +446,11 @@ Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atad
   (permisos 600) y sin respaldo remoto. Si se pierde, no se pueden firmar más paquetes y habría
   que publicar una versión nueva con otra clave pública. Conviene copiarla a un gestor de
   contraseñas o a un medio aparte.
-- **`panic = "abort"` en el perfil de release.** Un solo archivo que haga entrar en pánico al
-  lector PE o a YARA-X tumba el proceso entero. Es exactamente la clase de fallo que ha
-  golpeado a ClamAV una y otra vez (caída al escanear un archivo manipulado). Las pruebas de
-  propiedad cubren ya nuestros parsers; queda decidir si conviene pasar a `unwind` con
-  aislamiento del escaneo, sobre todo de cara a la protección en tiempo real de la Fase 5.
+- **El aislamiento del escaneo no repara el motor.** El perfil de release ya no usa
+  `panic = "abort"` y cada archivo se analiza dentro de `scan::isolate`, así que uno que haga
+  caer al lector o a YARA-X se reporta como *no analizado* (y por tanto *sospechoso*) en lugar
+  de tumbar el proceso. El límite es que el pánico pudo dejar el motor en un estado
+  inconsistente: si aparece uno reproducible, habrá que mover el análisis a un proceso aparte.
 - **La base de datos no se puede corregir por partes.** Si una regla publicada empieza a dar
   falsos positivos, hoy solo se arregla reconstruyendo y firmando el paquete completo. ClamAV
   permite silenciar una firma concreta con un archivo de texto; sería barato de añadir y
