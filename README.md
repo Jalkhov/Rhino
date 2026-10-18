@@ -422,6 +422,19 @@ Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atad
   (permisos 600) y sin respaldo remoto. Si se pierde, no se pueden firmar más paquetes y habría
   que publicar una versión nueva con otra clave pública. Conviene copiarla a un gestor de
   contraseñas o a un medio aparte.
+- **`panic = "abort"` en el perfil de release.** Un solo archivo que haga entrar en pánico al
+  lector PE o a YARA-X tumba el proceso entero. Es exactamente la clase de fallo que ha
+  golpeado a ClamAV una y otra vez (caída al escanear un archivo manipulado). Las pruebas de
+  propiedad cubren ya nuestros parsers; queda decidir si conviene pasar a `unwind` con
+  aislamiento del escaneo, sobre todo de cara a la protección en tiempo real de la Fase 5.
+- **La base de datos no se puede corregir por partes.** Si una regla publicada empieza a dar
+  falsos positivos, hoy solo se arregla reconstruyendo y firmando el paquete completo. ClamAV
+  permite silenciar una firma concreta con un archivo de texto; sería barato de añadir y
+  evitaría publicar 8,5 MB nuevos para tapar una sola regla. Ya nos pasó con la regla de
+  *hacktool* que marca `socat`.
+- **No se avisa de una base de datos vieja.** Un antivirus desactualizado da falsa confianza,
+  porque el usuario no puede saber que su protección tiene meses. Conviene mostrar los días
+  transcurridos desde la fecha del paquete.
 - **El conjunto de reglas cargado cuesta unos 52 MB de RAM**, y crece con el número de
   reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino: cada ampliación
   de la base de datos mueve esa cifra y conviene volver a medirla.

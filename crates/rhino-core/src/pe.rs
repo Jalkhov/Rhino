@@ -153,7 +153,13 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
 mod tests {
     use super::*;
     use crate::corpus::{CHARACTERISTICS_CODE, CHARACTERISTICS_WRITABLE_CODE, pe_with_section};
+    use proptest::prelude::*;
     use std::io::Cursor;
+
+    /// Desplazamiento del contador de secciones dentro de la imagen sintética:
+    /// cabecera DOS (0x3c guarda el offset del PE), firma "PE\0\0" y los dos
+    /// primeros bytes de la cabecera COFF, que son `machine`.
+    const SECTION_COUNT_OFFSET: usize = 0x80 + 4 + 2;
 
     #[test]
     fn parses_a_minimal_pe_image() {
@@ -202,5 +208,48 @@ mod tests {
         assert!(is_packer_section_name("upx1"));
         assert!(is_packer_section_name(".Aspack"));
         assert!(!is_packer_section_name(".text"));
+    }
+
+    // El motor come archivos hostiles: ninguna entrada puede hacer entrar en
+    // pánico al lector. La lección viene del historial de CVE de ClamAV, donde
+    // los fallos graves están en los parsers, no en el motor de firmas.
+    proptest! {
+        #[test]
+        fn parsing_arbitrary_bytes_never_panics(
+            image in proptest::collection::vec(any::<u8>(), 0..4096),
+        ) {
+            let _ = parse(&mut Cursor::new(&image));
+        }
+
+        /// Empezando de una imagen válida, que es donde el atacante tiene el
+        /// control real: el offset de la cabecera y las secciones.
+        #[test]
+        fn mutating_a_valid_image_never_panics(
+            mutations in proptest::collection::vec((any::<usize>(), any::<u8>()), 0..64),
+        ) {
+            let mut image = pe_with_section(".text", CHARACTERISTICS_CODE);
+            let length = image.len();
+            for (position, byte) in mutations {
+                image[position % length] = byte;
+            }
+            let _ = parse(&mut Cursor::new(&image));
+        }
+
+        /// Por muchas secciones que declare la cabecera, nunca reservamos
+        /// memoria por encima del tope.
+        #[test]
+        fn never_reads_more_than_the_section_limit(
+            declared in any::<u16>(),
+            filler in proptest::collection::vec(any::<u8>(), 0..8192),
+        ) {
+            let mut image = pe_with_section(".text", CHARACTERISTICS_CODE);
+            image[SECTION_COUNT_OFFSET..SECTION_COUNT_OFFSET + 2]
+                .copy_from_slice(&declared.to_le_bytes());
+            image.extend_from_slice(&filler);
+
+            if let Some(pe) = parse(&mut Cursor::new(&image)).unwrap() {
+                prop_assert!(pe.sections.len() <= MAX_SECTIONS as usize);
+            }
+        }
     }
 }

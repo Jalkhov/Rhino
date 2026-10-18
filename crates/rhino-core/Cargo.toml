@@ -27,3 +27,6 @@ yara-x = { version = "1.21.0", default-features = false, features = [
     "time-module",
     "zip-module",
 ] }
+
+[dev-dependencies]
+proptest = "1.12.0"
