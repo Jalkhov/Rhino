@@ -1,4 +1,4 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, HorizontalBox, LineEdit, VerticalBox } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
     title: "Rhino";
@@ -7,30 +7,46 @@ export component MainWindow inherits Window {
 
     in property <string> version;
 
+    in-out property <string> file-path;
     in-out property <string> status: "Listo";
+    in-out property <bool> scanning: false;
+
+    callback scan-requested();
 
     VerticalBox {
-        alignment: center;
-        spacing: 12px;
+        padding: 16px;
+        spacing: 10px;
 
         Text {
             text: "Rhino";
-            font-size: 28px;
+            font-size: 26px;
             horizontal-alignment: center;
         }
         Text {
             text: "v" + root.version;
             horizontal-alignment: center;
         }
+
+        HorizontalBox {
+            spacing: 8px;
+
+            LineEdit {
+                placeholder-text: "Ruta del archivo a escanear";
+                text <=> root.file-path;
+            }
+            Button {
+                text: "Escanear";
+                enabled: !root.scanning;
+                clicked => {
+                    root.scan-requested();
+                }
+            }
+        }
+
         Text {
             text: root.status;
-            horizontal-alignment: center;
-        }
-        Button {
-            text: "Escanear";
-            clicked => {
-                root.status = "El escaneo todavía no está implementado";
-            }
+            wrap: word-wrap;
+            vertical-alignment: top;
         }
     }
 }
