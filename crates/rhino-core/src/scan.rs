@@ -3,8 +3,8 @@
 //! Devuelve un informe estructurado y **nombra la capa que detectó** cada
 //! hallazgo (ver "Capas de detección" en el README).
 
-use std::fs::File;
-use std::io::{self, Cursor};
+use std::fs::{self, File};
+use std::io::{self, Cursor, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::hash::{sha256_hex, sha256_hex_reader};
@@ -113,11 +113,48 @@ pub fn scan_file(path: impl AsRef<Path>) -> io::Result<ScanReport> {
     let mut file = File::open(path)?;
     let size = file.metadata()?.len();
     let sha256 = sha256_hex_reader(&mut file)?;
+    // Hashear deja el cursor al final; el parseo PE empieza por la cabecera.
+    file.seek(SeekFrom::Start(0))?;
     let kind = match pe::parse(&mut file)? {
         Some(image) => FileKind::Pe(image),
         None => FileKind::Other,
     };
     Ok(build_report(path, size, sha256, kind))
+}
+
+/// Analiza recursivamente todos los archivos de un directorio.
+///
+/// Los enlaces simbólicos no se siguen (evita ciclos) y solo se miran archivos
+/// regulares, para no bloquearse en un FIFO o un dispositivo. Una carpeta sin
+/// permisos no aborta el escaneo: se omite.
+///
+/// shortcut: acumula todos los informes en memoria; pasar a resultados por lote
+/// cuando se escaneen discos completos.
+pub fn scan_dir(root: impl AsRef<Path>) -> io::Result<Vec<ScanReport>> {
+    let mut reports = Vec::new();
+    collect_files(root.as_ref(), &mut reports)?;
+    Ok(reports)
+}
+
+fn collect_files(directory: &Path, reports: &mut Vec<ScanReport>) -> io::Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let Ok(entry) = entry else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+
+        if file_type.is_symlink() {
+            continue;
+        } else if file_type.is_dir() {
+            collect_files(&path, reports).ok();
+        } else if file_type.is_file()
+            && let Ok(report) = scan_file(&path)
+        {
+            reports.push(report);
+        }
+    }
+    Ok(())
 }
 
 /// Analiza datos que ya están en memoria. Pensado para pruebas.
@@ -214,17 +251,13 @@ fn known_bad(sha256: &str) -> Option<&'static KnownBad> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pe::test_support::synthetic_pe;
-
-    /// Contenido exacto del archivo de prueba estándar EICAR (inofensivo).
-    const EICAR: &str = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
-
-    const SECTION_EXEC_READ: u32 = 0x6000_0020;
-    const SECTION_EXEC_READ_WRITE: u32 = 0xe000_0020;
+    use crate::corpus::{
+        EICAR_TEXT, benign_pe, benign_text, eicar, packed_pe, truncated_pe, writable_executable_pe,
+    };
 
     #[test]
     fn detects_eicar_by_hash() {
-        let report = scan_bytes("eicar.com", EICAR.as_bytes());
+        let report = scan_bytes("eicar.com", &eicar());
 
         assert_eq!(report.verdict, Verdict::Malicious);
         assert_eq!(report.findings.len(), 1);
@@ -234,7 +267,7 @@ mod tests {
 
     #[test]
     fn benign_text_is_clean() {
-        let report = scan_bytes("notas.txt", b"hola mundo");
+        let report = scan_bytes("notas.txt", &benign_text());
 
         assert_eq!(report.verdict, Verdict::Clean);
         assert!(report.findings.is_empty());
@@ -244,8 +277,7 @@ mod tests {
 
     #[test]
     fn benign_pe_is_clean() {
-        let image = synthetic_pe(".text", SECTION_EXEC_READ);
-        let report = scan_bytes("limpio.exe", &image);
+        let report = scan_bytes("limpio.exe", &benign_pe());
 
         assert_eq!(report.verdict, Verdict::Clean);
         assert!(report.findings.is_empty());
@@ -253,20 +285,21 @@ mod tests {
     }
 
     #[test]
-    fn packer_section_is_suspicious() {
-        let image = synthetic_pe("UPX0", SECTION_EXEC_READ);
-        let report = scan_bytes("empaquetado.exe", &image);
+    fn packer_sections_are_suspicious() {
+        let report = scan_bytes("empaquetado.exe", &packed_pe());
 
         assert_eq!(report.verdict, Verdict::Suspicious);
-        assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].layer, Layer::Heuristic);
-        assert_eq!(report.findings[0].name, "PE-Packer");
+        assert_eq!(report.findings.len(), 2);
+        assert!(
+            report.findings.iter().all(|finding| {
+                finding.layer == Layer::Heuristic && finding.name == "PE-Packer"
+            })
+        );
     }
 
     #[test]
     fn writable_executable_section_is_suspicious() {
-        let image = synthetic_pe(".text", SECTION_EXEC_READ_WRITE);
-        let report = scan_bytes("automod.exe", &image);
+        let report = scan_bytes("automod.exe", &writable_executable_pe());
 
         assert_eq!(report.verdict, Verdict::Suspicious);
         assert_eq!(report.findings.len(), 1);
@@ -274,11 +307,43 @@ mod tests {
     }
 
     #[test]
+    fn truncated_image_is_not_an_executable() {
+        let report = scan_bytes("cortado.exe", &truncated_pe());
+
+        assert_eq!(report.kind, FileKind::Other);
+        assert_eq!(report.verdict, Verdict::Clean);
+    }
+
+    #[test]
     fn summary_names_the_detecting_layer() {
-        let report = scan_bytes("eicar.com", EICAR.as_bytes());
+        let report = scan_bytes("eicar.com", &eicar());
         let summary = report.summary();
 
         assert!(summary.starts_with("eicar.com: malicioso"), "{summary}");
         assert!(summary.contains("[hash conocido]"), "{summary}");
+    }
+
+    #[test]
+    fn scans_a_directory_tree() {
+        let root = std::env::temp_dir().join(format!("rhino-dir-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).expect("no se pudo crear el árbol de prueba");
+        std::fs::write(root.join("eicar.com"), EICAR_TEXT.as_bytes()).unwrap();
+        std::fs::write(root.join("sub").join("notas.txt"), benign_text()).unwrap();
+
+        let reports = scan_dir(&root).expect("el escaneo del directorio falló");
+
+        assert_eq!(reports.len(), 2, "{reports:#?}");
+        assert!(
+            reports
+                .iter()
+                .any(|report| report.verdict == Verdict::Malicious)
+        );
+        assert!(
+            reports
+                .iter()
+                .any(|report| report.verdict == Verdict::Clean)
+        );
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

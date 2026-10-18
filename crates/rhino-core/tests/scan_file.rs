@@ -3,10 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rhino_core::{Verdict, scan_file};
-
-/// Contenido exacto del archivo de prueba estándar EICAR (inofensivo).
-const EICAR: &str = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+use rhino_core::corpus::{benign_text, eicar, packed_pe};
+use rhino_core::{Layer, Verdict, scan_file};
 
 /// Cada prueba usa un nombre distinto para que puedan correr en paralelo.
 fn write_temp(name: &str, contents: &[u8]) -> PathBuf {
@@ -17,12 +15,13 @@ fn write_temp(name: &str, contents: &[u8]) -> PathBuf {
 
 #[test]
 fn flags_eicar_written_to_disk() {
-    let path = write_temp("eicar.com", EICAR.as_bytes());
+    let contents = eicar();
+    let path = write_temp("eicar.com", &contents);
 
     let report = scan_file(&path).expect("el escaneo falló");
 
     assert_eq!(report.verdict, Verdict::Malicious);
-    assert_eq!(report.size, EICAR.len() as u64);
+    assert_eq!(report.size, contents.len() as u64);
     assert_eq!(report.sha256.len(), 64);
 
     fs::remove_file(&path).ok();
@@ -30,12 +29,30 @@ fn flags_eicar_written_to_disk() {
 
 #[test]
 fn benign_file_has_no_findings() {
-    let path = write_temp("benigno.txt", b"contenido inofensivo");
+    let path = write_temp("benigno.txt", &benign_text());
 
     let report = scan_file(&path).expect("el escaneo falló");
 
     assert_eq!(report.verdict, Verdict::Clean);
     assert!(report.findings.is_empty());
+
+    fs::remove_file(&path).ok();
+}
+
+#[test]
+fn flags_a_packed_executable_written_to_disk() {
+    let path = write_temp("empaquetado.exe", &packed_pe());
+
+    let report = scan_file(&path).expect("el escaneo falló");
+
+    assert_eq!(report.verdict, Verdict::Suspicious);
+    assert!(!report.findings.is_empty());
+    assert!(
+        report
+            .findings
+            .iter()
+            .all(|finding| finding.layer == Layer::Heuristic)
+    );
 
     fs::remove_file(&path).ok();
 }

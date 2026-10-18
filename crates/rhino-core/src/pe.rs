@@ -150,42 +150,14 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
-    /// Construye una imagen PE mínima con una sola sección.
-    pub(crate) fn synthetic_pe(section_name: &str, characteristics: u32) -> Vec<u8> {
-        const PE_OFFSET: usize = 0x80;
-        const COFF_SIZE: usize = 20;
-        const SECTION_SIZE: usize = 40;
-
-        let mut image = vec![0u8; PE_OFFSET + 4 + COFF_SIZE + SECTION_SIZE];
-        image[0..2].copy_from_slice(b"MZ");
-        image[0x3c..0x40].copy_from_slice(&(PE_OFFSET as u32).to_le_bytes());
-        image[PE_OFFSET..PE_OFFSET + 4].copy_from_slice(b"PE\0\0");
-
-        let coff = PE_OFFSET + 4;
-        image[coff..coff + 2].copy_from_slice(&0x014cu16.to_le_bytes()); // i386
-        image[coff + 2..coff + 4].copy_from_slice(&1u16.to_le_bytes()); // una sección
-        image[coff + 16..coff + 18].copy_from_slice(&0u16.to_le_bytes()); // sin cabecera opcional
-
-        let section = coff + COFF_SIZE;
-        image[section..section + section_name.len()].copy_from_slice(section_name.as_bytes());
-        image[section + 36..section + 40].copy_from_slice(&characteristics.to_le_bytes());
-        image
-    }
-}
-
-#[cfg(test)]
 mod tests {
-    use super::test_support::synthetic_pe;
     use super::*;
+    use crate::corpus::{CHARACTERISTICS_CODE, CHARACTERISTICS_WRITABLE_CODE, pe_with_section};
     use std::io::Cursor;
-
-    const SECTION_EXEC_READ: u32 = 0x6000_0020;
-    const SECTION_EXEC_READ_WRITE: u32 = 0xe000_0020;
 
     #[test]
     fn parses_a_minimal_pe_image() {
-        let image = synthetic_pe(".text", SECTION_EXEC_READ);
+        let image = pe_with_section(".text", CHARACTERISTICS_CODE);
         let parsed = parse(&mut Cursor::new(&image))
             .unwrap()
             .expect("debería ser un PE");
@@ -212,14 +184,14 @@ mod tests {
 
     #[test]
     fn detects_packer_sections_by_name() {
-        let image = synthetic_pe("UPX0", SECTION_EXEC_READ);
+        let image = pe_with_section("UPX0", CHARACTERISTICS_CODE);
         let parsed = parse(&mut Cursor::new(&image)).unwrap().unwrap();
         assert_eq!(parsed.packer_sections().len(), 1);
     }
 
     #[test]
     fn detects_writable_and_executable_sections() {
-        let image = synthetic_pe(".text", SECTION_EXEC_READ_WRITE);
+        let image = pe_with_section(".text", CHARACTERISTICS_WRITABLE_CODE);
         let parsed = parse(&mut Cursor::new(&image)).unwrap().unwrap();
         assert_eq!(parsed.writable_executable_sections().len(), 1);
         assert!(parsed.packer_sections().is_empty());

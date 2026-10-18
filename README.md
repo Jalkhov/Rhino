@@ -154,6 +154,13 @@ La interfaz vive en su propio crate (`rhino-app`), desacoplada del núcleo
   completo sobre un corpus de archivos (benignos y maliciosos conocidos), no como
   automatización de la ventana gráfica. Automatizar la interfaz cuesta mucho y aporta
   poco; se omite por ahora.
+- **Corpus sintético:** el módulo `rhino_core::corpus` genera en memoria las muestras que
+  ejercitan cada capa (EICAR, PE empaquetado, sección ejecutable-escribible, PE truncado).
+  Como Rhino es un escáner *estático* y nunca ejecuta lo que analiza, el proyecto **no
+  necesita descargar ni almacenar malware real** para probar el motor.
+- **Falsos positivos:** `cargo run -p rhino-core --example scan_dir -- <directorio>` mide la
+  métrica que decide si un antivirus es usable. Punto de partida actual: 0 detecciones
+  sobre 2394 binarios de `/usr/bin`.
 
 ## Estado
 
@@ -176,8 +183,12 @@ Primera rebanada, ya funcionando:
   (heurística propia: secciones de empaquetador y secciones ejecutables-escribibles).
 - La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
   aparte (la ventana no se congela) y el resultado aparece en pantalla.
-- Pruebas: 20 en total. Unitarias, más integración sobre archivos reales en disco,
-  incluido el archivo de prueba EICAR (inofensivo) y archivos benignos.
+- `scan_dir()` recorre un directorio completo sin seguir enlaces simbólicos y omitiendo lo
+  ilegible; el ejemplo `scan_dir` mide falsos positivos sobre binarios reales.
+- Corpus sintético reutilizable en `rhino_core::corpus`, compartido por las pruebas
+  unitarias y las de integración.
+- Pruebas: 23 en total. Unitarias, más integración sobre archivos reales en disco,
+  incluidos el archivo de prueba EICAR (inofensivo) y ejecutables sintéticos.
 
 Pendiente de esta fase: el motor YARA-X (capa 2), más heurísticas (entropía, macros) y el
 paquete de base de datos firmado con su actualizador.
