@@ -180,9 +180,10 @@ Medición real del paquete `core` (octubre de 2026): **5137 reglas y 1939 hashes
 tarda unos 34 s (una vez por semana, en la CI) y el paquete ocupa 8,5 MB de reglas más 0,1 MB
 de hashes.
 
-Pendiente: `DB_PUBLIC_KEY` está a ceros en `db.rs`, así que hoy ningún paquete real verifica.
-La clave de producción se genera con `keygen`, y su mitad privada vive en los secretos de
-GitHub Actions; ese paso va junto con el trabajo automático que construye el paquete.
+La clave de producción ya está puesta: `DB_PUBLIC_KEY` en `db.rs` lleva la real, y su mitad
+privada vive en `~/.config/rhino/db-key` (fuera del repositorio, con permisos 600). Es el
+único secreto del proyecto: quien la tenga puede emitir un paquete que apague Rhino en todos
+los equipos.
 
 ### Consumo medido
 
@@ -206,6 +207,27 @@ Escanear `/usr/bin` (2394 archivos) tarda 26 s con reglas y 9 s sin ellas.
 
 El peor caso medido es de 115 MB. Es la cifra que sirve de referencia mientras el software
 crece; no es un tope que haya que respetar.
+
+### Actualizador
+
+`rhino_core::update` descarga un paquete publicado y lo instala:
+
+```sh
+cargo run -p rhino-db -- update <url> <directorio>
+```
+
+El módulo **solo descarga**: quien tiene autoridad para aceptar un paquete es `db::Package`
+con la firma Ed25519, no el código que habla por la red. De ahí el reparto: `update` baja
+primero `manifest.json` y `manifest.sig`, comprueba la firma, y **solo si la versión es
+distinta** se molesta en bajar los 8,5 MB de reglas.
+
+El reemplazo es por directorio completo, nunca archivo a archivo. El paquete nuevo se arma en
+`rhino-db.nuevo` y se verifica entero (firma más SHA-256 de cada archivo); solo entonces se
+intercambia con el instalado, que queda como `rhino-db.anterior` y se borra. Si el intercambio
+falla a mitad, el paquete viejo vuelve a su sitio. Nunca existe un estado intermedio.
+
+La URL base se configura con la variable de entorno `RHINO_DB_URL` (`update::configured_url()`)
+porque todavía no hay servidor público: el sitio que aloja los paquetes vive en `web/`.
 
 ## Interfaz gráfica: Slint
 
@@ -297,12 +319,13 @@ Primera rebanada, ya funcionando:
 - Los flujos de integración continua están escritos pero **desactivados** (ver "Integración
   continua"), así que el paquete de base de datos se construye a mano con
   `scripts/update-db.sh`.
-- Pruebas: 54 en total (45 unitarias del núcleo, 4 del constructor del paquete y 5 de
+- Pruebas: 61 en total (52 unitarias del núcleo, 4 del constructor del paquete y 5 de
   integración), incluidas pruebas sobre archivos reales en disco (el EICAR inofensivo y
-  ejecutables sintéticos) y sobre firmas manipuladas.
+  ejecutables sintéticos), sobre firmas manipuladas, y sobre el actualizador contra un
+  servidor HTTP local de prueba.
 
-Pendiente de esta fase: el actualizador de red que descarga los paquetes ya firmados, y
-publicar el primer paquete real con la clave nueva.
+Pendiente de esta fase: publicar el primer paquete real desde el sitio de `web/` y volver a
+activar la integración continua cuando la cuenta de GitHub quede libre.
 
 Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
 

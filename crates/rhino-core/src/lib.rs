@@ -9,12 +9,14 @@ mod hash;
 mod pe;
 pub mod rules;
 mod scan;
+pub mod update;
 
 pub use db::{Database, DbError, HashList, Manifest, Package};
 pub use hash::{decode_hex, is_sha256_hex, sha256_hex, sha256_hex_reader, to_hex};
 pub use pe::{PeFile, PeSection};
 pub use rules::{RuleMatch, RuleSet};
 pub use scan::{FileKind, Finding, Layer, ScanReport, Verdict, scan_bytes, scan_dir, scan_file};
+pub use update::{UpdateError, update};
 
 /// Versión del núcleo, tomada de `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

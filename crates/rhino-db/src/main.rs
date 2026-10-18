@@ -25,7 +25,8 @@ uso:
   rhino-db keygen <clave-privada>     genera un par de claves
   rhino-db public-key <clave-privada> imprime la clave pública
   rhino-db build --rules <reglas.yar> --out <directorio> --channel <canal> --key <clave-privada> [--source <origen>]
-  rhino-db verify --package <directorio> [--public-key <clave-pública>]";
+  rhino-db verify --package <directorio> [--public-key <clave-pública>]
+  rhino-db update <url> <directorio>  descarga el paquete publicado en esa URL";
 
 /// De dónde salen las reglas, salvo que se diga otra cosa.
 const DEFAULT_SOURCE: &str =
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
         "public-key" => print_public_key(args.get(1)),
         "build" => build(&args[1..]),
         "verify" => verify(&args[1..]),
+        "update" => update_package(&args[1..]),
         other => Err(format!("orden desconocida: {other}\n\n{USAGE}")),
     };
 
@@ -95,6 +97,28 @@ fn print_public_key(path: Option<&String>) -> Result<(), String> {
 
     println!("{}", to_hex(&read_key(path)?.verifying_key().to_bytes()));
     Ok(())
+}
+
+/// Descarga el paquete publicado en `url` y lo deja instalado en `directorio`.
+fn update_package(args: &[String]) -> Result<(), String> {
+    let [base, destination] = args else {
+        return Err(format!(
+            "faltan la URL y el directorio de destino\n\n{USAGE}"
+        ));
+    };
+
+    let destination = Path::new(destination);
+    match rhino_core::update(base, destination) {
+        Ok(Some(version)) => {
+            println!("paquete {version} instalado en {}", destination.display());
+            Ok(())
+        }
+        Ok(None) => {
+            println!("ya estaba al día en {}", destination.display());
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn build(args: &[String]) -> Result<(), String> {

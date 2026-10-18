@@ -148,19 +148,9 @@ impl Package {
 
         verify_signature(&directory, &manifest_bytes, key)?;
 
-        let manifest: Manifest = serde_json::from_slice(&manifest_bytes)
-            .map_err(|error| DbError::Format(error.to_string()))?;
-
-        if manifest.format != FORMAT {
-            return Err(DbError::Format(format!(
-                "el manifiesto declara el formato {}, y este Rhino entiende el {FORMAT}",
-                manifest.format
-            )));
-        }
-
         Ok(Self {
             directory,
-            manifest,
+            manifest: parse_manifest(&manifest_bytes)?,
         })
     }
 
@@ -189,6 +179,17 @@ impl Package {
         })
     }
 
+    /// Comprueba el tamaño y el hash de cada archivo declarado, sin cargarlo.
+    ///
+    /// Es lo que hace falta antes de reemplazar el paquete instalado: verifica
+    /// sin gastar la memoria de interpretar las reglas.
+    pub fn verify_files(&self) -> Result<(), DbError> {
+        for entry in &self.manifest.files {
+            self.verified_file(&entry.name)?;
+        }
+        Ok(())
+    }
+
     fn verified_file(&self, name: &str) -> Result<Vec<u8>, DbError> {
         let entry = self
             .manifest
@@ -205,15 +206,57 @@ impl Package {
     }
 }
 
-/// Comprueba la firma del manifiesto.
+/// Comprueba la firma de un manifiesto que aún no está en disco y lo interpreta.
+///
+/// Lo usa el actualizador para decidir si vale la pena descargar el resto del
+/// paquete: el manifiesto es pequeño y la firma lo autentica igual que en disco.
+pub fn verify_manifest(
+    manifest: &[u8],
+    signature: &str,
+    key: &[u8; 32],
+) -> Result<Manifest, DbError> {
+    verify_bytes(manifest, signature, key)?;
+    parse_manifest(manifest)
+}
+
+/// Versión que declara el paquete instalado, sin comprobar la firma.
+///
+/// Solo sirve para no volver a descargar lo que ya está. La validez del paquete
+/// se comprueba siempre al cargarlo.
+pub fn installed_version(directory: impl AsRef<Path>) -> Option<String> {
+    let bytes = fs::read(directory.as_ref().join(MANIFEST_FILE)).ok()?;
+    Some(parse_manifest(&bytes).ok()?.version)
+}
+
+/// Comprueba la firma del manifiesto que está dentro de un paquete.
 fn verify_signature(directory: &Path, manifest: &[u8], key: &[u8; 32]) -> Result<(), DbError> {
     let text = fs::read_to_string(directory.join(SIGNATURE_FILE))?;
-    let bytes = decode_hex::<64>(text.trim()).ok_or(DbError::Signature)?;
+    verify_bytes(manifest, &text, key)
+}
+
+/// Firma Ed25519, en hexadecimal, sobre los bytes exactos del manifiesto.
+fn verify_bytes(manifest: &[u8], signature: &str, key: &[u8; 32]) -> Result<(), DbError> {
+    let bytes = decode_hex::<64>(signature.trim()).ok_or(DbError::Signature)?;
     let signature = Signature::from_bytes(&bytes);
 
     let key = VerifyingKey::from_bytes(key).map_err(|_| DbError::Signature)?;
     key.verify_strict(manifest, &signature)
         .map_err(|_| DbError::Signature)
+}
+
+/// Interpreta el manifiesto y comprueba que su formato es de los que entendemos.
+fn parse_manifest(manifest: &[u8]) -> Result<Manifest, DbError> {
+    let manifest: Manifest =
+        serde_json::from_slice(manifest).map_err(|error| DbError::Format(error.to_string()))?;
+
+    if manifest.format != FORMAT {
+        return Err(DbError::Format(format!(
+            "el manifiesto declara el formato {}, y este Rhino entiende el {FORMAT}",
+            manifest.format
+        )));
+    }
+
+    Ok(manifest)
 }
 
 /// Directorio por defecto de la base de datos: junto al ejecutable.
