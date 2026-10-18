@@ -17,9 +17,18 @@ CPU; el consumo medido se anota en "Motor de detección y base de datos".
 
 ## Plataforma objetivo
 
-- **Mínimo:** Windows 10 de 32 bits (x86).
+- **Mínimo:** Windows 10 de 32 bits (x86) con **4 GB de RAM**.
 - **También soportado:** Windows 10/11 de 64 bits (x64).
 - **Desarrollo:** Ubuntu, con compilación cruzada hacia Windows.
+
+Los 4 GB son la base de desarrollo (provisional, octubre de 2026). Dejan margen para un
+consumo de **100 a 200 MB** en reposo y durante el escaneo, que es el presupuesto que Rhino
+se fija. Sin ese mínimo habría que apuntar cada decisión a equipos de 1 GB, y el antivirus
+quedaría estrangulado por un objetivo que ya no corresponde a las máquinas reales.
+
+En 32 bits conviene recordar que el sistema operativo solo ve unos 3,2 GB de esos 4 GB y
+que **un proceso de 32 bits dispone de ~2 GB de espacio de direcciones**, del que también
+sale el archivo mapeado.
 
 ### Política de arquitectura
 
@@ -157,6 +166,9 @@ presiona la memoria como lo haría un `Vec`.
 
 Escanear `/usr/bin` (2394 archivos) tarda 26 s con reglas y 9 s sin ellas.
 
+El peor caso medido (115 MB) entra en el presupuesto de 100–200 MB que fijan los requisitos
+mínimos, aunque cerca del límite.
+
 ## Interfaz gráfica: Slint
 
 Elegida sobre `egui`, `iced` y las alternativas basadas en web:
@@ -265,8 +277,8 @@ sirve, enlazado con ese nombre). La primera compilación descarga el SDK de Wind
 ## Riesgos conocidos
 
 - **El conjunto de reglas cargado cuesta unos 52 MB de RAM**, y crece con el número de
-  reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino y el número que
-  hay que vigilar en cada ampliación de la base de datos.
+  reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino y lo que decide
+  qué tiers de YARA Forge caben en el presupuesto de 100–200 MB.
 - **Windows 10 de 32 bits está al final de su vida (EOL desde octubre de 2025).** Es la
   plataforma mínima pedida, así que se soporta, pero conviene saberlo.
 - **Rust está degradando los objetivos i686:** desde Rust 1.100 solo se distribuye la

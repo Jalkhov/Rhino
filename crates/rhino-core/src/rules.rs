@@ -10,6 +10,8 @@
 //! bastante memoria — justo lo que Rhino evita. `compile` y `to_compiled`
 //! existen para la canalización de CI que construye ese paquete.
 
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
@@ -108,9 +110,27 @@ impl RuleSet {
     /// y nunca mira más de [`MAX_SCAN_SIZE`] bytes.
     pub fn scan_path(&self, path: &Path) -> Result<Vec<RuleMatch>, String> {
         let mut scanner = self.scanner();
-        let results = scanner.scan_file(path).map_err(|error| error.to_string())?;
 
-        Ok(results.matching_rules().map(describe).collect())
+        match scanner.scan_file(path) {
+            Ok(results) => Ok(results.matching_rules().map(describe).collect()),
+            // Un proceso de 32 bits solo tiene ~2 GB de espacio de direcciones, y
+            // el motor mapea el archivo entero antes de mirarlo, así que los
+            // archivos de varios GB no se pueden mapear. Se lee entonces el
+            // prefijo acotado, que es lo único que se iba a mirar de todos modos.
+            Err(_) => self.scan_prefix(path),
+        }
+    }
+
+    /// Escanea los primeros [`MAX_SCAN_SIZE`] bytes del archivo.
+    fn scan_prefix(&self, path: &Path) -> Result<Vec<RuleMatch>, String> {
+        let mut data = Vec::new();
+        File::open(path)
+            .map_err(|error| error.to_string())?
+            .take(MAX_SCAN_SIZE as u64)
+            .read_to_end(&mut data)
+            .map_err(|error| error.to_string())?;
+
+        self.scan(&data)
     }
 
     fn scanner(&self) -> Scanner<'_> {
@@ -243,5 +263,21 @@ rule eicar_test_file {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn scans_a_file_by_path_and_the_bounded_prefix() {
+        let path = std::env::temp_dir().join(format!("rhino-reglas-{}.txt", std::process::id()));
+        std::fs::write(&path, crate::corpus::eicar()).unwrap();
+        let rules = RuleSet::compile(&[EICAR_RULE]).unwrap();
+
+        assert_eq!(rules.scan_path(&path).unwrap().len(), 1);
+        // La reserva acotada es la que entra cuando el archivo no se puede mapear.
+        assert_eq!(rules.scan_prefix(&path).unwrap().len(), 1);
+
+        let missing = path.with_extension("inexistente");
+        assert!(rules.scan_path(&missing).is_err());
+
+        std::fs::remove_file(&path).ok();
     }
 }
