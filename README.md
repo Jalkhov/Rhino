@@ -5,9 +5,15 @@ Antivirus ligero, rápido y de bajo consumo para Windows, con interfaz intuitiva
 ## Principio rector
 
 La eficiencia es la característica principal, no una optimización posterior. Rhino debe
-ser prácticamente imperceptible en un equipo modesto: sin picos de CPU, sin consumo
-excesivo de RAM y sin ralentizar el sistema. La funcionalidad se inspira en lo mejor de
-los antivirus reconocidos, pero sin su peso.
+ser prácticamente imperceptible en un equipo modesto: **la restricción dura es el consumo
+de memoria y de CPU**, no el tamaño. Sin picos de CPU, sin consumo excesivo de RAM y sin
+ralentizar el sistema. La funcionalidad se inspira en lo mejor de los antivirus
+reconocidos, pero sin su peso.
+
+**El tamaño de los binarios y del paquete de datos no es una restricción.** Un antivirus
+potente y de bajo consumo no cabe en 3 MB, y recortar peso a costa de capacidad de
+detección sería el error contrario. Lo que no se cruza es la memoria en uso y el tiempo de
+CPU; el consumo medido se anota en "Motor de detección y base de datos".
 
 ## Plataforma objetivo
 
@@ -128,9 +134,28 @@ CI): sin esa firma, quien intercepte una actualización podría apagar el antivi
 El paquete es neutral respecto a la arquitectura; la actualización se sirve por canales
 separados por arquitectura, según la política de arquitectura.
 
-Medición real del paquete `core` (octubre de 2026): 5132 reglas, que tardan 5,4 s en
-compilar y ocupan **8,5 MB** ya compiladas. Ahí está la razón de precompilar en la CI: en
-un equipo modesto eso serían segundos de espera y memoria extra en cada arranque.
+Medición real del paquete `core` (octubre de 2026): **5137 reglas**, que tardan unos 3 s
+en compilar y ocupan **8,5 MB** ya compiladas.
+
+### Consumo medido
+
+Ruta de producción (`.yarc`, `RuleSet::from_compiled`), con el paquete `core` completo,
+medido con `/usr/bin/time -v`:
+
+| Escenario | RAM máxima |
+| --- | --- |
+| Capas 1 y 3, sin reglas | 11 MB |
+| Con las 5137 reglas cargadas | 63 MB |
+| Más un archivo de 512 MB | 115 MB |
+| Compilando esas reglas en el equipo del usuario | 238 MB |
+
+El conjunto cargado ocupa unos **52 MB**, y ahí está el argumento definitivo para
+precompilar en la CI: hacerlo en el equipo del usuario no solo cuesta segundos, cuesta
+unos 180 MB más de RAM. Los archivos grandes se leen con memoria mapeada (por encima de
+32 MB), que es paginada del sistema de archivos y el sistema operativo puede reclamar: no
+presiona la memoria como lo haría un `Vec`.
+
+Escanear `/usr/bin` (2394 archivos) tarda 26 s con reglas y 9 s sin ellas.
 
 ## Interfaz gráfica: Slint
 
@@ -182,8 +207,10 @@ definidas en la sección "Motor de detección y base de datos".
 
 Primera rebanada, ya funcionando:
 
-- `rhino-core`: hashing SHA-256 por *streaming* (búfer fijo de 64 KiB, nunca carga el
-  archivo completo en memoria) y lector mínimo de cabeceras PE con lecturas acotadas.
+- `rhino-core`: hashing SHA-256 por *streaming* (búfer fijo de 64 KiB) y lector mínimo de
+  cabeceras PE con lecturas acotadas. La capa de reglas recibe la **ruta**, no los bytes:
+  el motor decide entre leer y mapear, con un tope de 64 MB por archivo. Ninguna capa carga
+  el archivo completo en memoria.
 - `scan()` devuelve un informe estructurado (`ScanReport`) con el veredicto y la lista de
   hallazgos, y **nombra la capa** que detectó cada uno: capa 1 (hash conocido), capa 2
   (reglas YARA-X) y capa 3 (heurística propia: secciones de empaquetador y secciones
@@ -194,10 +221,11 @@ Primera rebanada, ya funcionando:
 - La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
   aparte (la ventana no se congela) y el resultado aparece en pantalla.
 - `scan_dir()` recorre un directorio completo sin seguir enlaces simbólicos y omitiendo lo
-  ilegible; el ejemplo `scan_dir` mide falsos positivos sobre binarios reales.
+  ilegible; el ejemplo `scan_dir` mide falsos positivos y consumo sobre binarios reales y
+  acepta un `.yar`, un `.yarc` ya compilado o ninguno.
 - Corpus sintético reutilizable en `rhino_core::corpus`, compartido por las pruebas
   unitarias y las de integración.
-- Pruebas: 33 en total. Unitarias, más integración sobre archivos reales en disco,
+- Pruebas: 34 en total. Unitarias, más integración sobre archivos reales en disco,
   incluidos el archivo de prueba EICAR (inofensivo) y ejecutables sintéticos.
 
 Pendiente de esta fase: más heurísticas (entropía, macros), el paquete de base de datos
@@ -236,6 +264,9 @@ sirve, enlazado con ese nombre). La primera compilación descarga el SDK de Wind
 
 ## Riesgos conocidos
 
+- **El conjunto de reglas cargado cuesta unos 52 MB de RAM**, y crece con el número de
+  reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino y el número que
+  hay que vigilar en cada ampliación de la base de datos.
 - **Windows 10 de 32 bits está al final de su vida (EOL desde octubre de 2025).** Es la
   plataforma mínima pedida, así que se soporta, pero conviene saberlo.
 - **Rust está degradando los objetivos i686:** desde Rust 1.100 solo se distribuye la

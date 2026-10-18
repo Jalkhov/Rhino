@@ -10,6 +10,7 @@
 //! bastante memoria — justo lo que Rhino evita. `compile` y `to_compiled`
 //! existen para la canalización de CI que construye ese paquete.
 
+use std::path::Path;
 use std::time::Duration;
 
 use yara_x::{Compiler, MetaValue, Rules, Scanner};
@@ -23,6 +24,16 @@ const SCAN_TIMEOUT: Duration = Duration::from_secs(10);
 /// El paquete `core` de YARA Forge puntúa cada regla; por debajo del umbral la
 /// coincidencia se reporta como sospecha, no como detección confirmada.
 pub const SCORE_MALICIOUS: i64 = 75;
+
+/// Cuántos bytes mira como mucho la capa de reglas en un archivo.
+///
+/// YARA-X lee en un búfer lo que cabe por debajo de este tope y usa memoria
+/// mapeada por encima, así que el consumo no crece con el tamaño del archivo.
+/// El tope existe para que un archivo enorme (un ISO, un volcado de memoria) no
+/// pueda agotar la RAM de un equipo modesto: pasado el límite se analiza solo el
+/// principio, que es donde vive la cabecera. ClamAV usa un límite del mismo
+/// orden de magnitud.
+pub const MAX_SCAN_SIZE: usize = 64 * 1024 * 1024;
 
 /// Conjunto de reglas compiladas, listo para escanear.
 pub struct RuleSet {
@@ -85,12 +96,28 @@ impl RuleSet {
 
     /// Escanea datos en memoria y describe cada regla que coincidió.
     pub fn scan(&self, data: &[u8]) -> Result<Vec<RuleMatch>, String> {
-        let mut scanner = Scanner::new(&self.rules);
-        scanner.set_timeout(SCAN_TIMEOUT);
-
+        let mut scanner = self.scanner();
         let results = scanner.scan(data).map_err(|error| error.to_string())?;
 
         Ok(results.matching_rules().map(describe).collect())
+    }
+
+    /// Escanea un archivo del disco sin cargarlo entero en memoria.
+    ///
+    /// Es la ruta que usa el escaneo real: el motor decide entre leer y mapear,
+    /// y nunca mira más de [`MAX_SCAN_SIZE`] bytes.
+    pub fn scan_path(&self, path: &Path) -> Result<Vec<RuleMatch>, String> {
+        let mut scanner = self.scanner();
+        let results = scanner.scan_file(path).map_err(|error| error.to_string())?;
+
+        Ok(results.matching_rules().map(describe).collect())
+    }
+
+    fn scanner(&self) -> Scanner<'_> {
+        let mut scanner = Scanner::new(&self.rules);
+        scanner.set_timeout(SCAN_TIMEOUT);
+        scanner.max_scan_size(MAX_SCAN_SIZE);
+        scanner
     }
 }
 

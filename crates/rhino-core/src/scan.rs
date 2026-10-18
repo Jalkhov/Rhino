@@ -4,7 +4,7 @@
 //! hallazgo (ver "Capas de detección" en el README).
 
 use std::fs::{self, File};
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::{self, Cursor, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::hash::{sha256_hex, sha256_hex_reader};
@@ -110,8 +110,9 @@ impl ScanReport {
 
 /// Analiza un archivo del disco.
 ///
-/// El hash y la cabecera PE se leen por *streaming*. Solo la capa de reglas
-/// necesita el contenido completo en memoria, y solo si hay reglas cargadas.
+/// Nada se carga entero en memoria: el hash usa un búfer fijo, la cabecera PE se
+/// lee acotada y la capa de reglas recibe la ruta, no los bytes (el motor decide
+/// entre leer y mapear, con tope de tamaño).
 pub fn scan_file(path: impl AsRef<Path>, rules: &RuleSet) -> io::Result<ScanReport> {
     let path = path.as_ref();
     let mut file = File::open(path)?;
@@ -127,12 +128,7 @@ pub fn scan_file(path: impl AsRef<Path>, rules: &RuleSet) -> io::Result<ScanRepo
     let rule_findings = if rules.is_empty() {
         Vec::new()
     } else {
-        // shortcut: la capa de reglas carga el archivo completo en memoria; pasar al
-        // escaneo por bloques (módulo `blocks` de YARA-X) con archivos grandes.
-        let mut data = Vec::new();
-        file.seek(SeekFrom::Start(0))?;
-        file.read_to_end(&mut data)?;
-        rule_findings(&data, rules)
+        rule_findings_for_path(path, rules)
     };
 
     Ok(build_report(path, size, sha256, kind, rule_findings))
@@ -272,12 +268,24 @@ fn pe_findings(image: &PeFile) -> Vec<Finding> {
 fn rule_findings(data: &[u8], rules: &RuleSet) -> Vec<Finding> {
     match rules.scan(data) {
         Ok(matches) => matches.iter().map(rule_finding).collect(),
-        Err(error) => vec![Finding {
-            layer: Layer::Rules,
-            name: "Reglas no aplicadas".to_string(),
-            detail: format!("el motor de reglas falló: {error}"),
-            verdict: Verdict::Suspicious,
-        }],
+        Err(error) => vec![rule_error(error)],
+    }
+}
+
+/// Igual que [`rule_findings`], pero dejando que el motor lea el archivo.
+fn rule_findings_for_path(path: &Path, rules: &RuleSet) -> Vec<Finding> {
+    match rules.scan_path(path) {
+        Ok(matches) => matches.iter().map(rule_finding).collect(),
+        Err(error) => vec![rule_error(error)],
+    }
+}
+
+fn rule_error(error: String) -> Finding {
+    Finding {
+        layer: Layer::Rules,
+        name: "Reglas no aplicadas".to_string(),
+        detail: format!("el motor de reglas falló: {error}"),
+        verdict: Verdict::Suspicious,
     }
 }
 
@@ -468,6 +476,25 @@ rule rhino_test_eicar {
         let summary = report.summary();
 
         assert!(summary.contains("[regla]"), "{summary}");
+    }
+
+    #[test]
+    fn scans_a_file_on_disk_with_rules() {
+        let path = std::env::temp_dir().join(format!("rhino-reglas-{}.txt", std::process::id()));
+        std::fs::write(&path, MARKER).expect("no se pudo escribir el archivo de prueba");
+
+        let report = scan_file(&path, &test_rules()).expect("el escaneo falló");
+
+        assert_eq!(report.verdict, Verdict::Malicious);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.layer == Layer::Rules),
+            "{report:#?}"
+        );
+
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
