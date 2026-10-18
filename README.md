@@ -58,6 +58,17 @@ a futuro, pero no condiciona ninguna decisión actual.
 La protección en tiempo real (Fase 5) se plantea con las capacidades de modo usuario
 disponibles, sin driver.
 
+## Privacidad
+
+**Nada sale del equipo.** Rhino no envía rutas, nombres de archivo, contenido ni
+telemetría, ni siquiera anónima. Lo único que cruza la red es la descarga del paquete
+de firmas; de todo lo que Rhino conoce, lo único que expone es lo que ese paquete
+identifica (su versión y su canal).
+
+Un antivirus que reporta lo que el usuario tiene en su disco es justo lo que este
+proyecto no quiere ser, y es también la razón por la que muchos usuarios desconfían
+de los antivirus comerciales.
+
 ## Lenguaje: Rust
 
 Elegido sobre Go por cuatro razones que atacan directo los objetivos del proyecto:
