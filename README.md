@@ -317,8 +317,8 @@ Primera rebanada, ya funcionando:
   explícita («sin base de datos: no se comprobaron hashes ni reglas») y el veredicto nunca
   finge haber mirado lo que no pudo mirar.
 - Los flujos de integración continua están escritos pero **desactivados** (ver "Integración
-  continua"), así que el paquete de base de datos se construye a mano con
-  `scripts/update-db.sh`.
+  continua"), así que el paquete de base de datos se construye y publica a mano con
+  `web/tools/publish-db.sh`.
 - Pruebas: 61 en total (52 unitarias del núcleo, 4 del constructor del paquete y 5 de
   integración), incluidas pruebas sobre archivos reales en disco (el EICAR inofensivo y
   ejecutables sintéticos), sobre firmas manipuladas, y sobre el actualizador contra un
@@ -374,16 +374,31 @@ cada `push`. Para reactivarlos basta devolverlos a su sitio; las instrucciones e
   lo firma y lo **verifica con la clave pública compilada dentro de Rhino**. Ese paso es el
   importante: impide publicar un paquete que los usuarios no podrían aceptar.
 
-Mientras no haya CI, el paquete de base de datos se construye a mano:
+Mientras no haya CI, el paquete de base de datos se construye y publica a mano en el sitio
+local:
 
 ```sh
-scripts/update-db.sh ~/.config/rhino/db-key
+web/tools/publish-db.sh ~/.config/rhino/db-key
 ```
 
-El script descarga el último `core`, construye el paquete en `db-package/` y lo verifica con
-la clave pública compilada, que es el mismo control que aplicará el usuario final.
+Descarga el último `core`, construye el paquete, lo verifica con la clave pública compilada
+—el mismo control que aplicará el usuario final— y lo publica en `web/public/db/<canal>/`.
 `rust-toolchain.toml` fija Rust 1.98.1, los componentes y los dos targets de Windows, para que
 las compilaciones sigan siendo reproducibles cuando el CI vuelva.
+
+## Sitio
+
+`web/` es el sitio del que Rhino descarga su base de datos firmada y sus ejecutables. Se sirve
+en local con `web/serve.sh` (`http://localhost:8080`) y queda permanente como servicio de
+usuario (`web/systemd/rhino-web.service`).
+
+Vive dentro del repositorio, y no en uno aparte, porque existe solo para servir lo que produce
+el constructor de paquetes: si el formato del manifiesto cambia, el sitio y el formato cambian
+en el mismo commit y no pueden desincronizarse. Los paquetes y los ejecutables **no se
+versionan**; se regeneran.
+
+Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atado a
+`localhost`. El detalle está en `web/README.md`.
 
 ## Entorno de OpenCode
 

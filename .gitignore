@@ -1,2 +1,3 @@
 /target
-/db-package
+/web/public/db/
+/web/public/app/

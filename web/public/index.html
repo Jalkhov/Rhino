@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rhino</title>
+    <meta name="description" content="Antivirus de bajo consumo para Windows. Base de datos firmada y descargas." />
+    <link rel="stylesheet" href="estilo.css" />
+  </head>
+  <body>
+    <header>
+      <div class="ancho">
+        <p class="marca"><span class="punto"></span>Rhino</p>
+        <p class="lema">Antivirus de bajo consumo para Windows. Sin telemetría.</p>
+      </div>
+    </header>
+
+    <main class="ancho">
+      <section>
+        <h2>Base de datos de firmas</h2>
+        <p class="nota">
+          Reglas YARA-X precompiladas y hashes conocido-malo. El paquete va firmado
+          (Ed25519) y Rhino comprueba la firma y el SHA-256 de cada archivo antes de usarlo.
+        </p>
+
+        <article class="tarjeta" id="paquete">
+          <p class="cargando">Consultando el canal estable…</p>
+        </article>
+
+        <p class="nota">
+          Canal <code>estable</code>. Para probar otro canal basta con apuntar la
+          aplicación a su carpeta: un canal es un directorio.
+        </p>
+      </section>
+
+      <section>
+        <h2>Descargas</h2>
+        <div class="descargas">
+          <a class="boton" href="app/rhino-app-32.exe">Windows 32 bits</a>
+          <a class="boton" href="app/rhino-app-64.exe">Windows 64 bits</a>
+        </div>
+        <p class="nota">
+          Windows 10 o superior. La compilación de 32 bits es la que corre también
+          en Windows de 64 bits.
+        </p>
+      </section>
+
+      <section>
+        <h2>Probar en local</h2>
+        <p class="nota">
+          Con este sitio levantado, cualquier Rhino descarga de él en vez de hacerlo
+          de internet:
+        </p>
+        <pre><code>RHINO_DB_URL=http://localhost:8080/db/stable cargo run -p rhino-app</code></pre>
+        <p class="nota">
+          O instalar el paquete sin pasar por la aplicación:
+        </p>
+        <pre><code>cargo run -p rhino-db -- update http://localhost:8080/db/stable ~/.local/share/rhino/rhino-db</code></pre>
+      </section>
+    </main>
+
+    <footer>
+      <div class="ancho">
+        <p><strong>Nada sale del equipo.</strong> Rhino no envía rutas, nombres de archivo, contenido ni telemetría. Lo único que cruza la red es la descarga de este paquete.</p>
+      </div>
+    </footer>
+
+    <script>
+      // La página lee el manifiesto publicado en vez de repetir sus datos: así no
+      // puede quedar desfasada respecto a lo que hay de verdad en el canal.
+      const destino = document.getElementById("paquete");
+
+      const filas = [
+        ["Versión", (m) => m.version],
+        ["Canal", (m) => m.channel],
+        ["Publicado", (m) => m.created],
+        ["Reglas", (m) => m.counts.rules.toLocaleString("es")],
+        ["Hashes", (m) => m.counts.hashes.toLocaleString("es")],
+        ["Tamaño", (m) => tamano(m.files.reduce((suma, f) => suma + f.size, 0))],
+      ];
+
+      function tamano(bytes) {
+        const unidades = ["B", "KB", "MB", "GB"];
+        let i = 0;
+        while (bytes >= 1024 && i < unidades.length - 1) {
+          bytes /= 1024;
+          i += 1;
+        }
+        return `${bytes.toFixed(i === 0 ? 0 : 1)} ${unidades[i]}`;
+      }
+
+      fetch("db/stable/manifest.json")
+        .then((respuesta) => (respuesta.ok ? respuesta.json() : Promise.reject(respuesta.status)))
+        .then((manifiesto) => {
+          destino.innerHTML = filas
+            .map(([nombre, valor]) => `<div><dt>${nombre}</dt><dd>${valor(manifiesto)}</dd></div>`)
+            .join("");
+        })
+        .catch(() => {
+          destino.innerHTML =
+            '<p class="vacio">Todavía no hay ningún paquete publicado en este canal.</p>';
+        });
+    </script>
+  </body>
+</html>

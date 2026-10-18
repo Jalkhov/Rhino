@@ -1,0 +1,12 @@
+[Unit]
+Description=Sitio local de Rhino (paquetes de base de datos y descargas)
+Documentation=file://%h/Documentos/Dev/Rhino/web/README.md
+
+[Service]
+Type=simple
+ExecStart=%h/Documentos/Dev/Rhino/web/serve.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

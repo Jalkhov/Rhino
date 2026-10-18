@@ -11,4 +11,5 @@ git mv ci/ci.yml ci/db.yml .github/workflows/
 ```
 
 `db.yml` necesita además el secreto `RHINO_DB_KEY` con la clave privada de firma.
-Mientras tanto, el paquete de base de datos se construye a mano con `scripts/update-db.sh`.
+Mientras tanto, el paquete de base de datos se construye y publica a mano con
+`web/tools/publish-db.sh`.
