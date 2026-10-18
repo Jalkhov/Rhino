@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use rhino_core::{FileKind, RuleSet, Verdict, scan_dir};
+use rhino_core::{Database, FileKind, HashList, RuleSet, Verdict, scan_dir};
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
@@ -50,32 +50,48 @@ fn main() -> ExitCode {
         }
     }
 
-    let Ok(reports) = scan_dir(&root, &rules) else {
+    // La capa 1 se alimenta del metadato `hash` de las propias reglas, más el
+    // EICAR. Así se mide el escaneo completo sin depender de ningún feed aparte.
+    let mut declared = rules.known_hashes();
+    declared.push(rhino_core::corpus::eicar_sha256());
+    let hashes = match HashList::from_hex(declared) {
+        Ok(hashes) => hashes,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!("{} hashes declarados por las reglas", hashes.len());
+
+    let database = Database::from_parts(rules, hashes);
+
+    let (mut scanned, mut malicious, mut suspicious, mut executables) = (0usize, 0, 0, 0);
+    let result = scan_dir(&root, &database, |report| {
+        scanned += 1;
+        if matches!(report.kind, FileKind::Pe(_)) {
+            executables += 1;
+        }
+        match report.verdict {
+            Verdict::Clean => {}
+            Verdict::Malicious => {
+                malicious += 1;
+                println!("{}", report.summary());
+            }
+            Verdict::Suspicious => {
+                suspicious += 1;
+                println!("{}", report.summary());
+            }
+        }
+    });
+
+    if result.is_err() {
         eprintln!("no se pudo leer {}", root.display());
         return ExitCode::FAILURE;
-    };
-
-    let mut malicious = 0usize;
-    let mut suspicious = 0usize;
-    for report in reports
-        .iter()
-        .filter(|report| report.verdict != Verdict::Clean)
-    {
-        match report.verdict {
-            Verdict::Malicious => malicious += 1,
-            _ => suspicious += 1,
-        }
-        println!("{}", report.summary());
     }
 
     println!(
-        "\n{} archivos analizados ({} ejecutables PE): {malicious} maliciosos, {suspicious} sospechosos, {} limpios",
-        reports.len(),
-        reports
-            .iter()
-            .filter(|report| matches!(report.kind, FileKind::Pe(_)))
-            .count(),
-        reports.len() - malicious - suspicious
+        "\n{scanned} archivos analizados ({executables} ejecutables PE): {malicious} maliciosos, {suspicious} sospechosos, {} limpios",
+        scanned - malicious - suspicious
     );
     ExitCode::SUCCESS
 }

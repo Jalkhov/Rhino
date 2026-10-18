@@ -3,8 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rhino_core::corpus::{benign_text, eicar, packed_pe};
-use rhino_core::{Layer, RuleSet, Verdict, scan_file};
+use rhino_core::corpus::{benign_text, eicar, eicar_sha256, packed_pe};
+use rhino_core::{Database, HashList, Layer, RuleSet, Verdict, scan_file};
 
 /// Regla propia, para probar la capa 2 sin descargar el paquete de YARA Forge.
 const RULE: &str = r#"
@@ -21,8 +21,15 @@ rule rhino_test_eicar {
 }
 "#;
 
-fn rules() -> RuleSet {
-    RuleSet::compile(&[RULE]).expect("la regla de prueba no compiló")
+fn database_with_rules() -> Database {
+    let rules = RuleSet::compile(&[RULE]).expect("la regla de prueba no compiló");
+    Database::from_parts(rules, HashList::empty())
+}
+
+/// Base de datos que solo conoce el hash del EICAR, como la capa 1 en producción.
+fn database_with_hashes() -> Database {
+    let hashes = HashList::from_hex([eicar_sha256()]).expect("el hash del EICAR es válido");
+    Database::from_parts(RuleSet::empty(), hashes)
 }
 
 /// Cada prueba usa un nombre distinto para que puedan correr en paralelo.
@@ -37,11 +44,12 @@ fn flags_eicar_written_to_disk() {
     let contents = eicar();
     let path = write_temp("eicar.com", &contents);
 
-    let report = scan_file(&path, &RuleSet::empty()).expect("el escaneo falló");
+    let report = scan_file(&path, &database_with_hashes()).expect("el escaneo falló");
 
     assert_eq!(report.verdict, Verdict::Malicious);
     assert_eq!(report.size, contents.len() as u64);
-    assert_eq!(report.sha256.len(), 64);
+    assert_eq!(report.sha256, eicar_sha256());
+    assert_eq!(report.findings[0].layer, Layer::Hash);
 
     fs::remove_file(&path).ok();
 }
@@ -50,7 +58,7 @@ fn flags_eicar_written_to_disk() {
 fn benign_file_has_no_findings() {
     let path = write_temp("benigno.txt", &benign_text());
 
-    let report = scan_file(&path, &RuleSet::empty()).expect("el escaneo falló");
+    let report = scan_file(&path, &Database::empty()).expect("el escaneo falló");
 
     assert_eq!(report.verdict, Verdict::Clean);
     assert!(report.findings.is_empty());
@@ -62,7 +70,7 @@ fn benign_file_has_no_findings() {
 fn flags_a_packed_executable_written_to_disk() {
     let path = write_temp("empaquetado.exe", &packed_pe());
 
-    let report = scan_file(&path, &RuleSet::empty()).expect("el escaneo falló");
+    let report = scan_file(&path, &Database::empty()).expect("el escaneo falló");
 
     assert_eq!(report.verdict, Verdict::Suspicious);
     assert!(!report.findings.is_empty());
@@ -86,7 +94,7 @@ fn flags_a_rule_match_written_to_disk() {
         b"prefijo EICAR-STANDARD-ANTIVIRUS-TEST-FILE sufijo",
     );
 
-    let report = scan_file(&path, &rules()).expect("el escaneo falló");
+    let report = scan_file(&path, &database_with_rules()).expect("el escaneo falló");
 
     assert_eq!(report.findings.len(), 1, "{report:#?}");
     assert_eq!(report.findings[0].layer, Layer::Rules);
@@ -98,5 +106,5 @@ fn flags_a_rule_match_written_to_disk() {
 #[test]
 fn missing_file_is_an_error() {
     let path = std::env::temp_dir().join("rhino-no-existe-12345.bin");
-    assert!(scan_file(&path, &RuleSet::empty()).is_err());
+    assert!(scan_file(&path, &Database::empty()).is_err());
 }

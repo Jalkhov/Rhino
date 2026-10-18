@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/rhino-core", "crates/rhino-app"]
+members = ["crates/rhino-core", "crates/rhino-app", "crates/rhino-db"]
 
 [workspace.package]
 version = "0.1.0"

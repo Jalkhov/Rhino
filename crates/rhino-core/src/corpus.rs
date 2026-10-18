@@ -20,6 +20,14 @@ pub fn eicar() -> Vec<u8> {
     EICAR_TEXT.as_bytes().to_vec()
 }
 
+/// SHA-256 del archivo de prueba EICAR.
+///
+/// Es el hash que las pruebas usan para la capa 1, y el paquete de base de datos
+/// también lo incluye.
+pub fn eicar_sha256() -> String {
+    crate::hash::sha256_hex(&eicar())
+}
+
 /// Texto corriente que ningún heurístico debería marcar.
 pub fn benign_text() -> Vec<u8> {
     b"contenido inofensivo\n".to_vec()

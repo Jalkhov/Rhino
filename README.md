@@ -131,23 +131,47 @@ autor Y, fuente Z"*.
 ```
 rhino-db-AAAA.MM.DD/
   manifest.json   versión, fecha, canal, conteos y hash de cada archivo
-  meta.json       por regla: autor, fuente, licencia, URL original
   rules.yarc      reglas YARA-X precompiladas
   hashes.bin      hashes conocido-malo (capa 1)
   manifest.sig    firma Ed25519 del manifest
 ```
 
-Las reglas se compilan **una sola vez, en la CI**, nunca en el equipo del usuario:
-compilar miles de reglas al arrancar cuesta segundos y mucha memoria en una máquina
-modesta, mientras que cargar un archivo precompilado cuesta casi nada. El paquete va
-firmado con Ed25519 (clave pública dentro de Rhino, privada solo en los secretos de la
-CI): sin esa firma, quien intercepte una actualización podría apagar el antivirus.
+No hay `meta.json` a propósito: los metadatos por regla (autor, `source_url`) viajan dentro
+de las reglas compiladas y el motor los devuelve con cada coincidencia, así que la
+atribución que exige DRL 1.1 ya queda satisfecha sin duplicarlos en un archivo aparte.
 
-El paquete es neutral respecto a la arquitectura; la actualización se sirve por canales
-separados por arquitectura, según la política de arquitectura.
+`hashes.bin` tampoco depende de un feed externo: las reglas de YARA Forge declaran en su
+metadato `hash` los hashes de las muestras contra las que se escribieron, y de ahí se extrae
+la lista (más el EICAR).
 
-Medición real del paquete `core` (octubre de 2026): **5137 reglas**, que tardan unos 3 s
-en compilar y ocupan **8,5 MB** ya compiladas.
+Las reglas se compilan **una sola vez, en la CI**, nunca en el equipo del usuario: compilar
+miles de reglas al arrancar cuesta segundos y unos 180 MB de memoria en una máquina modesta,
+mientras que cargar el archivo precompilado cuesta unos 52 MB. El paquete va firmado con
+Ed25519 (clave pública dentro de Rhino, privada solo en los secretos de la CI): sin esa
+firma, quien intercepte una actualización podría apagar el antivirus. Además de la firma,
+`load()` comprueba el tamaño y el SHA-256 de cada archivo antes de usarlo.
+
+El paquete es neutral respecto a la arquitectura; el manifiesto ya lleva el campo `channel`,
+para que los canales por arquitectura solo necesiten transporte.
+
+**Cómo se construye y se verifica.** El crate `rhino-db` es la herramienta del workspace:
+
+```sh
+cargo run -p rhino-db -- keygen <clave-privada>    # una sola vez; la privada nunca va al repositorio
+cargo run -p rhino-db -- build --rules <yara-rules-core.yar> --out <dir> \
+                              --channel stable --key <clave-privada>
+cargo run -p rhino-db -- verify --package <dir> [--public-key <hex>]
+```
+
+`build` compila, firma y **verifica su propia firma antes de escribir nada**.
+
+Medición real del paquete `core` (octubre de 2026): **5137 reglas y 1939 hashes**: compilar
+tarda unos 34 s (una vez por semana, en la CI) y el paquete ocupa 8,5 MB de reglas más 0,1 MB
+de hashes.
+
+Pendiente: `DB_PUBLIC_KEY` está a ceros en `db.rs`, así que hoy ningún paquete real verifica.
+La clave de producción se genera con `keygen`, y su mitad privada vive en los secretos de
+GitHub Actions; ese paso va junto con el trabajo automático que construye el paquete.
 
 ### Consumo medido
 
@@ -202,11 +226,15 @@ La interfaz vive en su propio crate (`rhino-app`), desacoplada del núcleo
   ejercitan cada capa (EICAR, PE empaquetado, sección ejecutable-escribible, PE truncado).
   Como Rhino es un escáner *estático* y nunca ejecuta lo que analiza, el proyecto **no
   necesita descargar ni almacenar malware real** para probar el motor.
-- **Falsos positivos:** `cargo run -p rhino-core --example scan_dir -- <directorio> [reglas.yar]`
+- **Falsos positivos:** `cargo run -p rhino-core --example scan_dir -- <directorio> [reglas.yar|reglas.yarc]`
   mide la métrica que decide si un antivirus es usable. Con las capas 1 y 3: 0 detecciones
   sobre 2394 binarios de `/usr/bin`. Con el paquete real de YARA Forge (5137 reglas) sale
   **una**: la regla de *hacktool* «socat» marca a `socat1`, una herramienta legítima de
   doble uso. Un falso positivo de la clase esperable, no un fallo del motor.
+- **Paquete firmado:** las pruebas cubren lo que de verdad importa de la base de datos:
+  firma ausente, firma hecha con otra clave, manifiesto alterado después de firmar y archivo
+  alterado con manifiesto válido. Los dos últimos fallan de forma distinta y deliberada
+  (`Signature` para la firma, `Corrupt` para el contenido).
 
 ## Estado
 
@@ -236,18 +264,41 @@ Primera rebanada, ya funcionando:
 - La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
   aparte (la ventana no se congela) y el resultado aparece en pantalla.
 - `scan_dir()` recorre un directorio completo sin seguir enlaces simbólicos y omitiendo lo
-  ilegible; el ejemplo `scan_dir` mide falsos positivos y consumo sobre binarios reales y
-  acepta un `.yar`, un `.yarc` ya compilado o ninguno.
+  ilegible, y **entrega cada informe al momento** (`impl FnMut(ScanReport)`) en vez de
+  acumularlos: escanear un disco entero ya no crece en memoria. El ejemplo `scan_dir` mide
+  falsos positivos y consumo sobre binarios reales y acepta un `.yar`, un `.yarc` ya
+  compilado o ninguno.
+- **Base de datos firmada:** `Package`/`Database` cargan el paquete, verifican la firma
+  Ed25519 del manifiesto y el tamaño y SHA-256 de cada archivo antes de usarlo. La capa 1 ya
+  no es una lista embebida: sale de `hashes.bin`. Detalles y comandos en "Paquete de base de
+  datos".
 - Corpus sintético reutilizable en `rhino_core::corpus`, compartido por las pruebas
   unitarias y las de integración.
-- Pruebas: 34 en total. Unitarias, más integración sobre archivos reales en disco,
-  incluidos el archivo de prueba EICAR (inofensivo) y ejecutables sintéticos.
+- Pruebas: 53 en total (44 unitarias del núcleo, 4 del constructor del paquete y 5 de
+  integración), incluidas pruebas sobre archivos reales en disco (el EICAR inofensivo y
+  ejecutables sintéticos) y sobre firmas manipuladas.
 
-Pendiente de esta fase: más heurísticas (entropía, macros), el paquete de base de datos
-firmado con su actualizador y el trabajo automático que lo construye. Al armar el paquete
-conviene filtrar las reglas por etiqueta `FILE`: las etiquetadas `MEMORY` y `LOG` no
-aplican a archivos en disco, y hay 627 reglas sin etiqueta ninguna cuya eliminación hay
-que decidir con cuidado, porque perdería detecciones.
+Pendiente de esta fase: el trabajo automático que construye el paquete (CI semanal), la clave
+pública real y la verificación visual de la ventana, que aún no se ha ejecutado con datos
+reales.
+
+Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
+
+- **No se filtran las reglas por etiqueta.** Las `MEMORY`/`LOG` son ~67 de 5137 (1,3%), y las
+  627 sin etiqueta posiblemente sí aplican a archivos en disco. YARA-X no permite quitar
+  reglas ya compiladas, así que filtrar exigiría cirugía sobre el texto de las reglas: un
+  divisor mal hecho perdería detecciones en silencio, que es el peor fallo posible en un
+  antivirus.
+- **No hay heurística de entropía propia.** La entropía de archivo completo marca todo lo
+  comprimido y cifrado (ZIP, JPEG, vídeo), justo el falso positivo que hunde a un antivirus;
+  la de sección obligaría a leer los datos de las secciones, contra el diseño de leer solo
+  cabeceras.
+- **No hay heurística de macros de Office propia.** El paquete de YARA Forge ya cubre el
+  malware de Office; duplicarlo añadiría falsos positivos sin añadir detecciones.
+- **El actualizador de red está aplazado.** Sin servidor donde alojar los paquetes no se
+  puede probar, y publicar código no probado en una frontera de seguridad (actualizaciones
+  verificadas por firma) es peor que no tenerlo. Lo construido es la mitad riesgosa y
+  probable: formato, firma, verificación por hash y carga.
 
 ## Compilación cruzada
 
@@ -279,6 +330,9 @@ sirve, enlazado con ese nombre). La primera compilación descarga el SDK de Wind
 
 ## Riesgos conocidos
 
+- **La clave pública de la base de datos sigue a ceros** (`DB_PUBLIC_KEY` en `db.rs`), así que
+  hoy ningún paquete real verifica. Es deliberado: la mitad privada debe vivir en los
+  secretos de la CI, y generar la pareja es parte de montar el trabajo automático.
 - **El conjunto de reglas cargado cuesta unos 52 MB de RAM**, y crece con el número de
   reglas que se empaqueten. Es hoy el mayor consumidor de memoria de Rhino: cada ampliación
   de la base de datos mueve esa cifra y conviene volver a medirla.

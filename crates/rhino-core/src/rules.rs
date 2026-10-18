@@ -96,6 +96,36 @@ impl RuleSet {
         self.len() == 0
     }
 
+    /// Hashes de muestra que las reglas declaran en su metadato `hash`.
+    ///
+    /// Es la materia prima de `hashes.bin`. El paquete de YARA Forge ya trae los
+    /// hashes de las muestras contra las que se escribieron sus reglas, así que
+    /// la capa 1 se alimenta de la misma fuente que la capa 2 y no hace falta
+    /// ningún feed aparte. Solo se aceptan los que son SHA-256, que es lo que
+    /// sabe calcular la capa 1.
+    pub fn known_hashes(&self) -> Vec<String> {
+        let mut found = Vec::new();
+
+        for rule in self.rules.iter() {
+            for (name, value) in rule.metadata() {
+                if name != "hash" {
+                    continue;
+                }
+                let MetaValue::String(text) = value else {
+                    continue;
+                };
+                // El metadato puede traer varios hashes separados por espacios.
+                for candidate in text.split_whitespace() {
+                    if crate::hash::is_sha256_hex(candidate) {
+                        found.push(candidate.to_lowercase());
+                    }
+                }
+            }
+        }
+
+        found
+    }
+
     /// Escanea datos en memoria y describe cada regla que coincidió.
     pub fn scan(&self, data: &[u8]) -> Result<Vec<RuleMatch>, String> {
         let mut scanner = self.scanner();
@@ -279,5 +309,30 @@ rule eicar_test_file {
         assert!(rules.scan_path(&missing).is_err());
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn hashes_come_from_the_rule_metadata() {
+        let source = r#"
+rule con_hashes {
+    meta:
+        hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f d41d8cd98f00b204e9800998ecf8427e"
+    strings:
+        $a = "algo inofensivo"
+    condition:
+        $a
+}
+"#;
+        let rules = RuleSet::compile(&[source]).unwrap();
+
+        // El MD5 se ignora: la capa 1 solo sabe calcular SHA-256.
+        assert_eq!(rules.known_hashes(), vec![crate::corpus::eicar_sha256()]);
+    }
+
+    #[test]
+    fn rules_without_a_hash_metadata_contribute_nothing() {
+        let rules = RuleSet::compile(&[EICAR_RULE]).unwrap();
+
+        assert!(rules.known_hashes().is_empty());
     }
 }

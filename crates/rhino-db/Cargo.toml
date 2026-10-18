@@ -1,0 +1,10 @@
+[package]
+name = "rhino-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rhino-core = { path = "../rhino-core" }
+ed25519-dalek = "3.0.0"
+serde_json = "1.0"
+getrandom = "0.2"

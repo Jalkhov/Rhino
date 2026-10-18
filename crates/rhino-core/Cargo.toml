@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+ed25519-dalek = "3.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 sha2 = "0.10"
 # Motor de la capa 2. Se listan los módulos que el paquete `core` de YARA Forge
 # usa de verdad (comprobado en su release): así quedan fuera `cuckoo` (que

@@ -7,6 +7,7 @@ use std::fs::{self, File};
 use std::io::{self, Cursor, Seek, SeekFrom};
 use std::path::Path;
 
+use crate::db::{Database, HashList};
 use crate::hash::{sha256_hex, sha256_hex_reader};
 use crate::pe::{self, PeFile};
 use crate::rules::{RuleMatch, RuleSet, SCORE_MALICIOUS};
@@ -100,7 +101,7 @@ impl ScanReport {
         text
     }
 
-    fn file_name(&self) -> String {
+    pub fn file_name(&self) -> String {
         Path::new(&self.path)
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -113,7 +114,7 @@ impl ScanReport {
 /// Nada se carga entero en memoria: el hash usa un búfer fijo, la cabecera PE se
 /// lee acotada y la capa de reglas recibe la ruta, no los bytes (el motor decide
 /// entre leer y mapear, con tope de tamaño).
-pub fn scan_file(path: impl AsRef<Path>, rules: &RuleSet) -> io::Result<ScanReport> {
+pub fn scan_file(path: impl AsRef<Path>, database: &Database) -> io::Result<ScanReport> {
     let path = path.as_ref();
     let mut file = File::open(path)?;
     let size = file.metadata()?.len();
@@ -125,33 +126,45 @@ pub fn scan_file(path: impl AsRef<Path>, rules: &RuleSet) -> io::Result<ScanRepo
         None => FileKind::Other,
     };
 
+    let rules = database.rules();
     let rule_findings = if rules.is_empty() {
         Vec::new()
     } else {
         rule_findings_for_path(path, rules)
     };
 
-    Ok(build_report(path, size, sha256, kind, rule_findings))
+    Ok(build_report(
+        path,
+        size,
+        sha256,
+        kind,
+        rule_findings,
+        database.hashes(),
+    ))
 }
 
-/// Analiza recursivamente todos los archivos de un directorio.
+/// Analiza recursivamente todos los archivos de un directorio, entregando cada
+/// informe a `on_report` en cuanto está listo.
+///
+/// No acumula nada: quien llama decide qué guardar. Un disco entero produce
+/// cientos de miles de informes, y guardarlos todos es justo lo que Rhino no
+/// puede hacer en un equipo modesto.
 ///
 /// Los enlaces simbólicos no se siguen (evita ciclos) y solo se miran archivos
 /// regulares, para no bloquearse en un FIFO o un dispositivo. Una carpeta sin
 /// permisos no aborta el escaneo: se omite.
-///
-/// shortcut: acumula todos los informes en memoria; pasar a resultados por lote
-/// cuando se escaneen discos completos.
-pub fn scan_dir(root: impl AsRef<Path>, rules: &RuleSet) -> io::Result<Vec<ScanReport>> {
-    let mut reports = Vec::new();
-    collect_files(root.as_ref(), rules, &mut reports)?;
-    Ok(reports)
+pub fn scan_dir(
+    root: impl AsRef<Path>,
+    database: &Database,
+    mut on_report: impl FnMut(ScanReport),
+) -> io::Result<()> {
+    collect_files(root.as_ref(), database, &mut on_report)
 }
 
 fn collect_files(
     directory: &Path,
-    rules: &RuleSet,
-    reports: &mut Vec<ScanReport>,
+    database: &Database,
+    on_report: &mut impl FnMut(ScanReport),
 ) -> io::Result<()> {
     for entry in fs::read_dir(directory)? {
         let Ok(entry) = entry else { continue };
@@ -163,30 +176,31 @@ fn collect_files(
         if file_type.is_symlink() {
             continue;
         } else if file_type.is_dir() {
-            collect_files(&path, rules, reports).ok();
+            collect_files(&path, database, on_report).ok();
         } else if file_type.is_file()
-            && let Ok(report) = scan_file(&path, rules)
+            && let Ok(report) = scan_file(&path, database)
         {
-            reports.push(report);
+            on_report(report);
         }
     }
     Ok(())
 }
 
 /// Analiza datos que ya están en memoria. Pensado para pruebas.
-pub fn scan_bytes(name: &str, data: &[u8], rules: &RuleSet) -> ScanReport {
+pub fn scan_bytes(name: &str, data: &[u8], database: &Database) -> ScanReport {
     let mut cursor = Cursor::new(data);
     let kind = match pe::parse(&mut cursor) {
         Ok(Some(image)) => FileKind::Pe(image),
         _ => FileKind::Other,
     };
-    let rule_findings = rule_findings(data, rules);
+    let rule_findings = rule_findings(data, database.rules());
     build_report(
         Path::new(name),
         data.len() as u64,
         sha256_hex(data),
         kind,
         rule_findings,
+        database.hashes(),
     )
 }
 
@@ -196,14 +210,15 @@ fn build_report(
     sha256: String,
     kind: FileKind,
     rule_findings: Vec<Finding>,
+    hashes: &HashList,
 ) -> ScanReport {
     let mut findings = Vec::new();
 
-    if let Some(known) = known_bad(&sha256) {
+    if hashes.contains_hex(&sha256) {
         findings.push(Finding {
             layer: Layer::Hash,
-            name: known.name.to_string(),
-            detail: known.detail.to_string(),
+            name: "Hash conocido".to_string(),
+            detail: "coincide con la lista de hashes conocido-malo".to_string(),
             verdict: Verdict::Malicious,
         });
     }
@@ -316,30 +331,12 @@ fn rule_finding(matched: &RuleMatch) -> Finding {
     }
 }
 
-/// Entrada de la lista de hashes conocido-malo.
-struct KnownBad {
-    sha256: &'static str,
-    name: &'static str,
-    detail: &'static str,
-}
-
-/// Lista provisional embebida. La sustituirá `hashes.bin` dentro del paquete
-/// de base de datos firmado (ver "Paquete de base de datos" en el README).
-const KNOWN_BAD: &[KnownBad] = &[KnownBad {
-    sha256: "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
-    name: "EICAR-Test-File",
-    detail: "coincide con el archivo de prueba estándar EICAR",
-}];
-
-fn known_bad(sha256: &str) -> Option<&'static KnownBad> {
-    KNOWN_BAD.iter().find(|entry| entry.sha256 == sha256)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::corpus::{
-        EICAR_TEXT, benign_pe, benign_text, eicar, packed_pe, truncated_pe, writable_executable_pe,
+        EICAR_TEXT, benign_pe, benign_text, eicar, eicar_sha256, packed_pe, truncated_pe,
+        writable_executable_pe,
     };
 
     /// Regla mínima propia: prueba la capa 2 sin descargar YARA Forge.
@@ -361,23 +358,42 @@ rule rhino_test_eicar {
         RuleSet::compile(&[TEST_RULE]).expect("la regla de prueba no compiló")
     }
 
+    fn test_database() -> Database {
+        Database::from_parts(test_rules(), HashList::empty())
+    }
+
+    /// Base de datos que solo conoce el hash del EICAR, para probar la capa 1.
+    fn hash_database() -> Database {
+        Database::from_parts(
+            RuleSet::empty(),
+            HashList::from_hex([eicar_sha256()]).expect("el hash del EICAR es válido"),
+        )
+    }
+
     /// Solo el fragmento que busca la regla: así la capa de hash no interviene y
     /// lo que se mide es exclusivamente la capa de reglas.
     const MARKER: &[u8] = b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE";
 
     #[test]
     fn detects_eicar_by_hash() {
-        let report = scan_bytes("eicar.com", &eicar(), &RuleSet::empty());
+        let report = scan_bytes("eicar.com", &eicar(), &hash_database());
 
         assert_eq!(report.verdict, Verdict::Malicious);
         assert_eq!(report.findings.len(), 1);
         assert_eq!(report.findings[0].layer, Layer::Hash);
-        assert_eq!(report.findings[0].name, "EICAR-Test-File");
+        assert_eq!(report.findings[0].name, "Hash conocido");
+    }
+
+    #[test]
+    fn an_empty_database_does_not_know_the_eicar_hash() {
+        let report = scan_bytes("eicar.com", &eicar(), &Database::empty());
+
+        assert_eq!(report.verdict, Verdict::Clean);
     }
 
     #[test]
     fn benign_text_is_clean() {
-        let report = scan_bytes("notas.txt", &benign_text(), &RuleSet::empty());
+        let report = scan_bytes("notas.txt", &benign_text(), &Database::empty());
 
         assert_eq!(report.verdict, Verdict::Clean);
         assert!(report.findings.is_empty());
@@ -387,7 +403,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn benign_pe_is_clean() {
-        let report = scan_bytes("limpio.exe", &benign_pe(), &RuleSet::empty());
+        let report = scan_bytes("limpio.exe", &benign_pe(), &Database::empty());
 
         assert_eq!(report.verdict, Verdict::Clean);
         assert!(report.findings.is_empty());
@@ -396,7 +412,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn packer_sections_are_suspicious() {
-        let report = scan_bytes("empaquetado.exe", &packed_pe(), &RuleSet::empty());
+        let report = scan_bytes("empaquetado.exe", &packed_pe(), &Database::empty());
 
         assert_eq!(report.verdict, Verdict::Suspicious);
         assert_eq!(report.findings.len(), 2);
@@ -409,7 +425,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn writable_executable_section_is_suspicious() {
-        let report = scan_bytes("automod.exe", &writable_executable_pe(), &RuleSet::empty());
+        let report = scan_bytes("automod.exe", &writable_executable_pe(), &Database::empty());
 
         assert_eq!(report.verdict, Verdict::Suspicious);
         assert_eq!(report.findings.len(), 1);
@@ -418,7 +434,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn truncated_image_is_not_an_executable() {
-        let report = scan_bytes("cortado.exe", &truncated_pe(), &RuleSet::empty());
+        let report = scan_bytes("cortado.exe", &truncated_pe(), &Database::empty());
 
         assert_eq!(report.kind, FileKind::Other);
         assert_eq!(report.verdict, Verdict::Clean);
@@ -426,7 +442,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn summary_names_the_detecting_layer() {
-        let report = scan_bytes("eicar.com", &eicar(), &RuleSet::empty());
+        let report = scan_bytes("eicar.com", &eicar(), &hash_database());
         let summary = report.summary();
 
         assert!(summary.starts_with("eicar.com: malicioso"), "{summary}");
@@ -435,7 +451,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn a_matching_rule_is_a_detection_and_carries_its_attribution() {
-        let report = scan_bytes("solo-regla.txt", MARKER, &test_rules());
+        let report = scan_bytes("solo-regla.txt", MARKER, &test_database());
 
         assert_eq!(report.findings.len(), 1, "{report:#?}");
         let finding = &report.findings[0];
@@ -456,15 +472,16 @@ rule rhino_test_eicar {
     fn a_low_score_rule_is_only_suspicious() {
         let source = TEST_RULE.replace("score = 90", "score = 65");
         let rules = RuleSet::compile(&[source.as_str()]).unwrap();
+        let database = Database::from_parts(rules, HashList::empty());
 
-        let report = scan_bytes("solo-regla.txt", MARKER, &rules);
+        let report = scan_bytes("solo-regla.txt", MARKER, &database);
 
         assert_eq!(report.verdict, Verdict::Suspicious);
     }
 
     #[test]
     fn rules_that_do_not_match_leave_the_file_clean() {
-        let report = scan_bytes("notas.txt", &benign_text(), &test_rules());
+        let report = scan_bytes("notas.txt", &benign_text(), &test_database());
 
         assert_eq!(report.verdict, Verdict::Clean);
         assert!(report.findings.is_empty());
@@ -472,7 +489,7 @@ rule rhino_test_eicar {
 
     #[test]
     fn summary_names_the_rules_layer() {
-        let report = scan_bytes("solo-regla.txt", MARKER, &test_rules());
+        let report = scan_bytes("solo-regla.txt", MARKER, &test_database());
         let summary = report.summary();
 
         assert!(summary.contains("[regla]"), "{summary}");
@@ -483,7 +500,7 @@ rule rhino_test_eicar {
         let path = std::env::temp_dir().join(format!("rhino-reglas-{}.txt", std::process::id()));
         std::fs::write(&path, MARKER).expect("no se pudo escribir el archivo de prueba");
 
-        let report = scan_file(&path, &test_rules()).expect("el escaneo falló");
+        let report = scan_file(&path, &test_database()).expect("el escaneo falló");
 
         assert_eq!(report.verdict, Verdict::Malicious);
         assert!(
@@ -498,13 +515,15 @@ rule rhino_test_eicar {
     }
 
     #[test]
-    fn scans_a_directory_tree() {
+    fn scans_a_directory_tree_and_reports_each_file() {
         let root = std::env::temp_dir().join(format!("rhino-dir-{}", std::process::id()));
         std::fs::create_dir_all(root.join("sub")).expect("no se pudo crear el árbol de prueba");
         std::fs::write(root.join("eicar.com"), EICAR_TEXT.as_bytes()).unwrap();
         std::fs::write(root.join("sub").join("notas.txt"), benign_text()).unwrap();
 
-        let reports = scan_dir(&root, &RuleSet::empty()).expect("el escaneo del directorio falló");
+        let mut reports = Vec::new();
+        scan_dir(&root, &hash_database(), |report| reports.push(report))
+            .expect("el escaneo del directorio falló");
 
         assert_eq!(reports.len(), 2, "{reports:#?}");
         assert!(

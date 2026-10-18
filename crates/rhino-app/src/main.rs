@@ -5,15 +5,16 @@ use std::sync::Arc;
 
 use slint::ComponentHandle;
 
+use rhino_core::Database;
+
 slint::include_modules!();
 
 fn main() -> Result<(), slint::PlatformError> {
     let window = MainWindow::new()?;
     window.set_version(rhino_core::VERSION.into());
 
-    // Todavía no hay paquete de base de datos que cargar (ver "Paquete de base de
-    // datos" en el README); cuando exista, aquí se leerán `rules.yarc` y `hashes.bin`.
-    let rules = Arc::new(rhino_core::RuleSet::empty());
+    let database = Arc::new(load_database());
+    window.set_status(status_for(database.version()).into());
 
     let weak_window = window.as_weak();
     window.on_scan_requested(move || {
@@ -32,9 +33,9 @@ fn main() -> Result<(), slint::PlatformError> {
 
         // El escaneo corre fuera del hilo de la interfaz: la ventana nunca se congela.
         let weak_window = window.as_weak();
-        let rules = Arc::clone(&rules);
+        let database = Arc::clone(&database);
         std::thread::spawn(move || {
-            let status = match rhino_core::scan_file(&path, &rules) {
+            let status = match rhino_core::scan_file(&path, &database) {
                 Ok(report) => report.summary(),
                 Err(error) => format!("No se pudo analizar: {error}"),
             };
@@ -46,4 +47,30 @@ fn main() -> Result<(), slint::PlatformError> {
     });
 
     window.run()
+}
+
+/// Carga el paquete de base de datos que acompaña al ejecutable.
+///
+/// Si no está, o si no supera la verificación de firma, Rhino arranca igual y lo
+/// dice en pantalla: escanea con las capas 1 y 3. Lo que nunca hace es caer en
+/// silencio a «limpio» sin haber podido mirar.
+fn load_database() -> Database {
+    let Some(directory) = rhino_core::db::default_directory() else {
+        return Database::empty();
+    };
+
+    match Database::load(&directory) {
+        Ok(database) => database,
+        Err(error) => {
+            eprintln!("base de datos no cargada: {error}");
+            Database::empty()
+        }
+    }
+}
+
+fn status_for(version: Option<&str>) -> String {
+    match version {
+        Some(version) => format!("Listo · base de datos {version}"),
+        None => "Listo · sin base de datos".to_string(),
+    }
 }
