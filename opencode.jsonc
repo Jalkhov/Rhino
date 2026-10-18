@@ -1,0 +1,45 @@
+{
+  // Configuracion de OpenCode para el proyecto Rhino.
+  // Patron del entorno: cada proyecto declara aqui los MCP que necesita,
+  // para no pagar el costo fijo de todos los esquemas globales en cada turno.
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      // Base de conocimiento y busqueda con ranking sobre lo ya analizado.
+      "context-mode": {
+        "type": "local",
+        "command": ["npx", "-y", "context-mode"]
+      },
+      // Busqueda web (DuckDuckGo). Necesaria para investigar el dominio AV.
+      "ddg-search": {
+        "type": "local",
+        "command": ["duckduckgo-mcp-server"]
+      },
+      // Ingenieria inversa: analizar muestras de malware y auditar que tan
+      // dificil es revertir nuestro propio binario.
+      "rea": {
+        "type": "local",
+        "command": [
+          "/home/jalkhov/.nvm/versions/node/v24.18.0/bin/rea",
+          "mcp"
+        ],
+        "environment": {
+          "GHIDRA_INSTALL_DIR": "/home/jalkhov/.local/opt/ghidra_12.1.4_PUBLIC",
+          "JAVA_HOME": "/home/jalkhov/.local/opt/jdk21"
+        }
+      },
+      // Documentacion actualizada de librerias (windows-rs, yara-x, tokio...).
+      // El endpoint publico no usa OAuth; oauth:false evita el intento de descubrimiento.
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "oauth": false
+      }
+    }
+  }
+  // Descartados a proposito:
+  //   github-mcp  -> redundante: el CLI `gh` ya esta autenticado (cuenta Jalkhov).
+  //   playwright  -> no aplica (no hay UI web).
+  //   mobile-mcp  -> no aplica.
+  //   aseprite    -> no aplica (no hay arte de juego).
+}

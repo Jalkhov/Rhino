@@ -1,0 +1,16 @@
+[package]
+name = "rhino-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rhino-core = { path = "../rhino-core" }
+slint = { version = "1", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit",
+    "renderer-software",
+] }
+
+[build-dependencies]
+slint-build = "1"

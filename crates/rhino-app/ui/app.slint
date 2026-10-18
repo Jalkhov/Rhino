@@ -1,0 +1,36 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Rhino";
+    width: 480px;
+    height: 320px;
+
+    in property <string> version;
+
+    in-out property <string> status: "Listo";
+
+    VerticalBox {
+        alignment: center;
+        spacing: 12px;
+
+        Text {
+            text: "Rhino";
+            font-size: 28px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "v" + root.version;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.status;
+            horizontal-alignment: center;
+        }
+        Button {
+            text: "Escanear";
+            clicked => {
+                root.status = "El escaneo todavía no está implementado";
+            }
+        }
+    }
+}
