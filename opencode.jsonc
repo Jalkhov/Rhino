@@ -36,6 +36,16 @@
         "oauth": false
       }
     }
+  },
+  // impeccable queda desactivada en este proyecto. Su tesis es el diseno
+  // "distintivo, fuera de la distribucion"; lo pedido es lo contrario:
+  // limpio, familiar y anclado en la interfaz real de Avira que el usuario
+  // aprobo como referencia. Las skills de UX si quedan permitidas.
+  "permission": {
+    "skill": {
+      "*": "allow",
+      "impeccable": "deny"
+    }
   }
   // Descartados a proposito:
   //   github-mcp  -> redundante: el CLI `gh` ya esta autenticado (cuenta Jalkhov).
