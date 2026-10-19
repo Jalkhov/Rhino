@@ -21,7 +21,10 @@ pub use history::{History, ScanRun};
 pub use pe::{PeFile, PeSection};
 pub use quarantine::{Quarantine, QuarantineError, StoredFile};
 pub use rules::{RuleMatch, RuleSet};
-pub use scan::{FileKind, Finding, Layer, ScanReport, Verdict, scan_bytes, scan_dir, scan_file};
+pub use scan::{
+    FileKind, Finding, Layer, RuleOrigin, ScanReport, Verdict, scan_bytes, scan_dir,
+    scan_dir_cancellable, scan_file,
+};
 pub use update::{UpdateError, update};
 
 /// Versión del núcleo, tomada de `Cargo.toml`.

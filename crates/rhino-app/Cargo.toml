@@ -11,6 +11,11 @@ slint = { version = "1", default-features = false, features = [
     "backend-winit",
     "renderer-software",
 ] }
+# El selector nativo de archivos. En Linux el backend por defecto arrastra el
+# cliente de Wayland entero, que aquí no hace falta (la ventana es winit/X11 y
+# el producto es Windows): con `xdg-portal` a secas compila en el equipo de
+# desarrollo y en i686-pc-windows-msvc usa los cuadros de diálogo de Windows.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 [build-dependencies]
 slint-build = "1"

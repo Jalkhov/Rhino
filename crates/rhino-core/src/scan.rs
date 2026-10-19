@@ -6,6 +6,7 @@
 use std::fs::{self, File};
 use std::io::{self, Cursor, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::Database;
 use crate::hash::{sha256_hex, sha256_hex_reader};
@@ -70,6 +71,18 @@ impl FileKind {
     }
 }
 
+/// De dónde salió una regla que coincidió.
+///
+/// La licencia DRL 1.1 obliga a conservar y mostrar la autoría, así que la
+/// interfaz necesita estos tres datos por separado y no dentro del texto del
+/// hallazgo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleOrigin {
+    pub identifier: String,
+    pub author: String,
+    pub source: String,
+}
+
 /// Un motivo concreto de detección.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
@@ -77,6 +90,8 @@ pub struct Finding {
     pub name: String,
     pub detail: String,
     pub verdict: Verdict,
+    /// Presente solo si el hallazgo viene de una regla.
+    pub rule: Option<RuleOrigin>,
 }
 
 /// Resultado completo de analizar un archivo.
@@ -190,6 +205,7 @@ fn internal_error(message: String) -> Finding {
         name: "Archivo no analizado".to_string(),
         detail: format!("el motor entró en pánico: {message}"),
         verdict: Verdict::Suspicious,
+        rule: None,
     }
 }
 
@@ -208,15 +224,34 @@ pub fn scan_dir(
     database: &Database,
     mut on_report: impl FnMut(ScanReport),
 ) -> io::Result<()> {
-    collect_files(root.as_ref(), database, &mut on_report)
+    walk(root.as_ref(), database, None, &mut on_report).map(|_| ())
 }
 
-fn collect_files(
+/// Igual que [`scan_dir`], pero se puede detener a mitad.
+///
+/// Devuelve `false` si `stop` se levantó antes de terminar. La bandera se mira
+/// entre archivo y archivo: cortar a mitad de uno dejaría un informe a medias.
+pub fn scan_dir_cancellable(
+    root: impl AsRef<Path>,
+    database: &Database,
+    stop: &AtomicBool,
+    mut on_report: impl FnMut(ScanReport),
+) -> io::Result<bool> {
+    walk(root.as_ref(), database, Some(stop), &mut on_report)
+}
+
+/// El paseo compartido: recorre el árbol y entrega cada informe a `on_report`.
+fn walk(
     directory: &Path,
     database: &Database,
+    stop: Option<&AtomicBool>,
     on_report: &mut impl FnMut(ScanReport),
-) -> io::Result<()> {
+) -> io::Result<bool> {
     for entry in fs::read_dir(directory)? {
+        if stop.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Ok(false);
+        }
+
         let Ok(entry) = entry else { continue };
         let Ok(file_type) = entry.file_type() else {
             continue;
@@ -226,14 +261,17 @@ fn collect_files(
         if file_type.is_symlink() {
             continue;
         } else if file_type.is_dir() {
-            collect_files(&path, database, on_report).ok();
+            // Una subcarpeta sin permisos se omite, no aborta el escaneo.
+            if !walk(&path, database, stop, on_report).unwrap_or(true) {
+                return Ok(false);
+            }
         } else if file_type.is_file()
             && let Ok(report) = scan_file(&path, database)
         {
             on_report(report);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Analiza datos que ya están en memoria. Pensado para pruebas.
@@ -270,6 +308,7 @@ fn build_report(
             name: "Hash conocido".to_string(),
             detail: "coincide con la lista de hashes conocido-malo".to_string(),
             verdict: Verdict::Malicious,
+            rule: None,
         });
     }
 
@@ -312,6 +351,7 @@ fn pe_findings(image: &PeFile) -> Vec<Finding> {
                 section.name
             ),
             verdict: Verdict::Suspicious,
+            rule: None,
         });
     }
 
@@ -324,6 +364,7 @@ fn pe_findings(image: &PeFile) -> Vec<Finding> {
                 section.name
             ),
             verdict: Verdict::Suspicious,
+            rule: None,
         });
     }
 
@@ -356,6 +397,7 @@ fn rule_error(error: String) -> Finding {
         name: "Reglas no aplicadas".to_string(),
         detail: format!("el motor de reglas falló: {error}"),
         verdict: Verdict::Suspicious,
+        rule: None,
     }
 }
 
@@ -383,6 +425,11 @@ fn rule_finding(matched: &RuleMatch) -> Finding {
             // Sin puntaje declarado la regla es nuestra, y se asume de confianza.
             _ => Verdict::Malicious,
         },
+        rule: Some(RuleOrigin {
+            identifier: matched.identifier.clone(),
+            author: matched.author.clone().unwrap_or_default(),
+            source: matched.source_url.clone().unwrap_or_default(),
+        }),
     }
 }
 
@@ -522,6 +569,20 @@ rule rhino_test_eicar {
             finding.detail
         );
         assert_eq!(report.verdict, Verdict::Malicious);
+
+        // La autoría viaja también aparte del texto: es lo que muestra la ficha
+        // de la comprobación y lo que exige la licencia.
+        let origin = finding.rule.as_ref().expect("la regla no dejó su origen");
+        assert_eq!(origin.identifier, "rhino_test_eicar");
+        assert_eq!(origin.author, "Rhino");
+        assert_eq!(origin.source, "https://example.invalid/reglas");
+    }
+
+    #[test]
+    fn a_finding_that_is_not_a_rule_has_no_origin() {
+        let report = scan_bytes("eicar.com", &eicar(), &hash_database());
+
+        assert_eq!(report.findings[0].rule, None);
     }
 
     #[test]
@@ -606,6 +667,40 @@ rule rhino_test_eicar {
             reports
                 .iter()
                 .any(|report| report.verdict == Verdict::Clean)
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_stopped_scan_delivers_fewer_reports_and_says_so() {
+        let root = std::env::temp_dir().join(format!("rhino-parada-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("no se pudo crear el árbol de prueba");
+        for index in 0..8 {
+            std::fs::write(root.join(format!("nota-{index}.txt")), benign_text()).unwrap();
+        }
+
+        let running = AtomicBool::new(false);
+        let mut completed = Vec::new();
+        let finished = scan_dir_cancellable(&root, &Database::empty(), &running, |report| {
+            completed.push(report)
+        })
+        .expect("el escaneo del directorio falló");
+        assert!(finished);
+        assert_eq!(completed.len(), 8, "{completed:#?}");
+
+        let stopped = AtomicBool::new(true);
+        let mut partial = Vec::new();
+        let finished = scan_dir_cancellable(&root, &Database::empty(), &stopped, |report| {
+            partial.push(report)
+        })
+        .expect("el escaneo del directorio falló");
+        assert!(!finished);
+        assert!(
+            partial.len() < completed.len(),
+            "con la bandera levantada no puede entregar los mismos informes: {} de {}",
+            partial.len(),
+            completed.len()
         );
 
         std::fs::remove_dir_all(&root).ok();

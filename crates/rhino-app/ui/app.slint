@@ -26,6 +26,18 @@ import "./fonts/Inter-Bold.ttf";
 import { Theme } from "theme.slint";
 import { Icon, Icons } from "icon.slint";
 
+// Un hallazgo tal como lo ve la lista de «Archivos sospechosos». La autoría de la
+// regla viaja aparte del motivo porque la licencia DRL 1.1 obliga a mostrarla.
+export struct FindingItem {
+    name: string,
+    path: string,
+    level: string,        // "PELIGROSO" o "SOSPECHOSO"
+    reason: string,
+    rule-id: string,
+    rule-author: string,
+    rule-source: string,
+}
+
 // ── Piezas ────────────────────────────────────────────────────────────────────
 
 component Rule inherits Rectangle {
@@ -454,13 +466,6 @@ component FindingRow inherits Rectangle {
                     Text { text: "Origen"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 104px; }
                     Text { text: root.rule-source; font-size: Theme.t-sm; color: Theme.ink-soft; horizontal-stretch: 1; overflow: elide; }
                 }
-
-                Text {
-                    text: "Datos de ejemplo. En el producto esta ficha siempre dice de dónde salió la comprobación.";
-                    font-size: Theme.t-xs;
-                    color: Theme.ink-muted;
-                    wrap: word-wrap;
-                }
             }
         }
     }
@@ -522,7 +527,7 @@ component SafeRow inherits Rectangle {
 
 // Inicio: el estado del equipo, dicho en una frase, y una sola acción que hacer.
 component HomeScreen inherits Rectangle {
-    in property <int> demo;
+    in property <bool> has-database: true;
     in property <string> headline;
     in property <string> message;
     in property <color> tone;
@@ -554,7 +559,7 @@ component HomeScreen inherits Rectangle {
             }
         }
 
-        if root.demo == 3 : Text {
+        if !root.has-database : Text {
             text: "Mientras falten, Rhino no puede reconocer nada. Preferimos decírtelo antes que dejarte confiado.";
             font-size: Theme.t-sm;
             color: Theme.ink-muted;
@@ -564,27 +569,31 @@ component HomeScreen inherits Rectangle {
     }
 }
 
-// Analizar: se elige una cosa y se pulsa un botón.
+// Analizar: se elige una cosa y se pulsa un botón. Mientras analiza, enseña lo que
+// de verdad está pasando (cuántos archivos y cuál) y deja detenerlo. No hay barra
+// determinada: cuántos archivos hay no se sabe hasta recorrerlos.
 component AnalyzeScreen inherits Rectangle {
-    in property <int> demo;
+    in property <bool> scanning: false;
+    in property <int> scanned: 0;
+    in property <string> current-file: "";
     in property <string> chosen-path;
-    in-out property <float> progress: 0;
     in-out property <int> scope: 0;
-    callback scan-all;
-    callback scan-one;
-    callback stop;
+    callback scan-all();
+    callback pick-folder();
+    callback pick-file();
+    callback cancel-scan();
 
     VerticalLayout {
         padding: 28px;
         spacing: 16px;
 
-        Text {
+        if !root.scanning : Text {
             text: "¿Qué quieres analizar?";
             font-size: Theme.t-lg;
             color: Theme.ink-soft;
         }
 
-        HorizontalLayout {
+        if !root.scanning : HorizontalLayout {
             height: 104px;
             spacing: 14px;
 
@@ -616,7 +625,7 @@ component AnalyzeScreen inherits Rectangle {
             }
         }
 
-        if root.scope != 0 : Rectangle {
+        if !root.scanning && root.scope != 0 : Rectangle {
             height: 46px;
             background: Theme.sunken;
             border-radius: Theme.r-sm;
@@ -647,17 +656,20 @@ component AnalyzeScreen inherits Rectangle {
                     AppButton {
                         width: 190px;
                         label: "Elegir con Windows";
-                        clicked => { root.scan-one(); }
+                        clicked => {
+                            if root.scope == 1 { root.pick-folder(); }
+                            else { root.pick-file(); }
+                        }
                     }
                 }
             }
         }
 
-        if root.demo == 2 : Rectangle {
+        if root.scanning : Rectangle {
             background: Theme.card;
             border-radius: Theme.r-md;
             // Sin esto el panel se reparte el sobrante con el espaciador final y
-            // lo absorben sus tres textos, que quedan separados por huecos de 50 px.
+            // lo absorben sus textos, que quedan separados por huecos enormes.
             vertical-stretch: 0;
 
             VerticalLayout {
@@ -666,28 +678,17 @@ component AnalyzeScreen inherits Rectangle {
 
                 Text { text: "Analizando"; font-size: Theme.t-lg; font-weight: 600; color: Theme.ink; }
 
-                Rectangle {
-                    height: 6px;
-                    border-radius: 3px;
-                    background: Theme.sunken;
-
-                    Rectangle {
-                        width: parent.width * root.progress;
-                        height: parent.height;
-                        border-radius: 3px;
-                        background: Theme.accent-mark;
-                    }
-                }
-
                 Text {
-                    text: "Ahora mismo: C:\\Usuarios\\Ana\\Descargas\\instalador.exe";
+                    text: root.current-file == ""
+                        ? "Preparando el análisis…"
+                        : "Ahora mismo: " + root.current-file;
                     font-size: Theme.t-sm;
                     color: Theme.ink-soft;
                     overflow: elide;
                 }
 
                 Text {
-                    text: "12.480 archivos mirados · 0 sospechosos · quedan unos 4 minutos";
+                    text: root.scanned == 1 ? "1 archivo mirado" : root.scanned + " archivos mirados";
                     font-size: Theme.t-sm;
                     color: Theme.ink-muted;
                     overflow: elide;
@@ -700,13 +701,13 @@ component AnalyzeScreen inherits Rectangle {
                         width: 132px;
                         primary: false;
                         label: "Detener";
-                        clicked => { root.stop(); }
+                        clicked => { root.cancel-scan(); }
                     }
                 }
             }
         }
 
-        if root.demo != 2 : VerticalLayout {
+        if !root.scanning : VerticalLayout {
             alignment: center;
             spacing: 10px;
 
@@ -720,7 +721,11 @@ component AnalyzeScreen inherits Rectangle {
                     height: 44px;
                     label: root.scope == 0 ? "Analizar todo el equipo"
                          : (root.scope == 1 ? "Analizar esa carpeta" : "Analizar ese archivo");
-                    clicked => { root.scan-all(); }
+                    clicked => {
+                        if root.scope == 0 { root.scan-all(); }
+                        else if root.scope == 1 { root.pick-folder(); }
+                        else { root.pick-file(); }
+                    }
                 }
             }
 
@@ -738,7 +743,7 @@ component AnalyzeScreen inherits Rectangle {
 
 // Los hallazgos: qué se encontró y qué se puede hacer.
 component ResultsScreen inherits Rectangle {
-    in property <int> demo;
+    in property <[FindingItem]> findings;
     in property <string> headline;
     in-out property <int> expanded: -1;
     callback go(int);
@@ -749,51 +754,93 @@ component ResultsScreen inherits Rectangle {
         padding: 28px;
         spacing: 16px;
 
-        HorizontalLayout {
-            spacing: 12px;
+        Text {
+            text: root.headline;
+            font-size: Theme.t-xl;
+            font-weight: 600;
+            color: Theme.ink;
+            overflow: elide;
+        }
 
-            Text {
-                text: root.headline;
-                font-size: Theme.t-xl;
-                font-weight: 600;
-                color: Theme.ink;
-                horizontal-stretch: 1;
-                vertical-alignment: center;
-                overflow: elide;
+        // La lista puede ser larga: un análisis de verdad deja decenas de filas
+        // y la ventana mide 680 px fijos, así que la lista se desplaza.
+        if root.findings.length > 0 : scroll := Flickable {
+            // Ancho explícito: si lo deja al contenido, la cadena resuelve por el
+            // tamaño de la tarjeta y la lista se encoge (regla 1).
+            width: root.width - 56px;
+            vertical-stretch: 1;
+            content-width: scroll.width;
+            content-height: list.preferred-height;
+            interactive: true;
+
+            list := VerticalLayout {
+                width: scroll.width;
+                spacing: 16px;
+
+                for finding[index] in root.findings : FindingRow {
+                    name: finding.name;
+                    path: finding.path;
+                    level: finding.level;
+                    reason: finding.reason;
+                    rule-id: finding.rule-id;
+                    rule-author: finding.rule-author;
+                    rule-source: finding.rule-source;
+                    expanded: root.expanded == index;
+                    toggle => { root.expanded = root.expanded == index ? -1 : index; }
+                    quarantine => { root.quarantine(index); }
+                    ignore => { root.ignore(index); }
+                }
             }
-
-            Text { text: "Datos de ejemplo"; font-size: Theme.t-xs; color: Theme.ink-muted; vertical-alignment: center; }
         }
 
-        FindingRow {
-            name: "instalador.exe";
-            path: "C:\\Usuarios\\Ana\\Descargas\\instalador.exe";
-            level: "PELIGROSO";
-            reason: "Intenta abrir una conexión a un servidor conocido por repartir programas dañinos. No hemos ejecutado nada: solo lo hemos leído.";
-            rule-id: "rhino/suspicious-downloader";
-            rule-author: "Equipo de reglas de Rhino";
-            rule-source: "https://ejemplo.invalido/reglas/suspicious-downloader";
-            expanded: root.expanded == 0;
-            toggle => { root.expanded = root.expanded == 0 ? -1 : 0; }
-            quarantine => { root.quarantine(0); }
-            ignore => { root.ignore(0); }
-        }
+        // El mismo estado vacío que el de «Poner a salvo», envuelto para que el
+        // sobrante lo absorba el envoltorio y no la tarjeta (regla 17).
+        if root.findings.length == 0 : VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
 
-        FindingRow {
-            name: "crack_v3.zip";
-            path: "C:\\Usuarios\\Ana\\Escritorio\\crack_v3.zip";
-            level: "SOSPECHOSO";
-            reason: "Dentro hay un programa que se disfraza de otra cosa para que no lo reconozcas. Coincide con uno que ya se ha visto antes.";
-            rule-id: "rhino/renamed-executable";
-            rule-author: "Equipo de reglas de Rhino";
-            rule-source: "https://ejemplo.invalido/reglas/renamed-executable";
-            expanded: root.expanded == 1;
-            toggle => { root.expanded = root.expanded == 1 ? -1 : 1; }
-            quarantine => { root.quarantine(1); }
-            ignore => { root.ignore(1); }
-        }
+            Rectangle {
+                background: Theme.card;
+                border-radius: Theme.r-md;
 
-        Rectangle { vertical-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    padding: 24px;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { glyph: Icons.check-circle; box: 34px; tint: Theme.ink-muted; }
+                    }
+
+                    Text {
+                        text: "No hay nada sospechoso";
+                        font-size: Theme.t-xl;
+                        font-weight: 600;
+                        color: Theme.ink;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Lo que encontremos aparecerá aquí, con lo que puedes hacer con ello.";
+                        font-size: Theme.t-md;
+                        color: Theme.ink-muted;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+
+                        AppButton {
+                            width: 180px;
+                            label: "Volver a Inicio";
+                            clicked => { root.go(0); }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1076,42 +1123,61 @@ export component MainWindow inherits Window {
     default-font-weight: 400;
 
     in property <string> version;
+    in property <[FindingItem]> findings;
+    in property <int> scanned: 0;             // archivos ya analizados
+    in property <string> current-file: "";    // el que se está analizando ahora
+    in property <bool> has-database: false;
     in-out property <string> file-path;
     in-out property <string> status: "Listo";
     in-out property <bool> scanning: false;
     in-out property <int> screen: 0;
     in-out property <int> demo: 0;
-    in-out property <float> progress: 0;
+    in-out property <int> scope: 0;           // 0 = todo el equipo, 1 = una carpeta, 2 = un archivo
+    in-out property <int> expanded-row: -1;   // qué hallazgo tiene «Ver la comprobación» abierto
 
     callback scan-requested();
+    callback pick-folder();
+    callback pick-file();
+    callback cancel-scan();
+    callback quarantine(int);
+    callback ignore(int);
 
-    // Lo que la maqueta demuestra según el estado elegido. Cada estado dice una
-    // sola cosa y ofrece una sola acción.
-    property <bool> findings: root.demo == 1;
-    property <color> tone: root.demo == 3 ? Theme.warn : (root.findings ? Theme.danger-fill : Theme.ok);
-    property <string> tone-glyph: root.demo == 3 ? Icons.alert : (root.findings ? Icons.shield-alert : Icons.check);
-    property <string> headline: root.findings
-        ? "Encontramos 2 archivos sospechosos"
-        : (root.demo == 3 ? "Falta actualizar la protección" : "Tu equipo está protegido");
-    property <string> message: root.findings
-        ? "Los hemos apartado para que no puedan hacer nada. Puedes recuperarlos si sabes que son tuyos."
-        : (root.demo == 3
-            ? "A Rhino le faltan los datos con los que reconoce lo dañino."
-            : "No hay nada que hacer. Rhino seguirá vigilando sin molestarte.");
-    property <string> action: root.findings
-        ? "Ver los archivos sospechosos"
-        : (root.demo == 3 ? "Actualizar la protección" : "Analizar todo el equipo");
+    // El estado de Inicio sale de los datos reales, en este orden: analizando,
+    // hallazgos, falta de datos y, si no, todo en orden.
+    property <bool> has-findings: root.findings.length > 0;
+    property <color> tone: root.scanning ? Theme.accent
+        : (root.has-findings ? Theme.danger-fill : (!root.has-database ? Theme.warn : Theme.ok));
+    property <string> tone-glyph: root.scanning ? Icons.search
+        : (root.has-findings ? Icons.shield-alert : (!root.has-database ? Icons.alert : Icons.check));
+    property <string> headline: root.scanning
+        ? "Analizando tu equipo"
+        : (root.has-findings
+            ? (root.findings.length == 1
+                ? "Encontramos 1 archivo sospechoso"
+                : "Encontramos " + root.findings.length + " archivos sospechosos")
+            : (!root.has-database ? "Falta actualizar la protección" : "Tu equipo está protegido"));
+    property <string> message: root.scanning
+        ? "Puedes seguir usando el equipo mientras analizamos."
+        : (root.has-findings
+            ? "Míralos y decide qué hacer con ellos."
+            : (!root.has-database
+                ? "A Rhino le faltan los datos con los que reconoce lo dañino."
+                : "No hay nada que hacer. Rhino seguirá vigilando sin molestarte."));
+    property <string> action: root.scanning
+        ? "Ver el progreso"
+        : (root.has-findings
+            ? "Ver los archivos sospechosos"
+            : (!root.has-database ? "Actualizar la protección" : "Analizar todo el equipo"));
     property <string> safe-count: "3";
-    property <string> results-headline: "2 archivos sospechosos";
-
-    // La barra de progreso de la maqueta: mientras "analiza", avanza sola.
-    Timer {
-        interval: 120ms;
-        running: root.demo == 2;
-        triggered => {
-            root.progress = root.progress >= 0.9 ? 0.1 : root.progress + 0.02;
-        }
-    }
+    property <string> results-headline: root.findings.length == 0
+        ? "Ningún archivo sospechoso"
+        : (root.findings.length == 1
+            ? "1 archivo sospechoso"
+            : root.findings.length + " archivos sospechosos");
+    // La insignia del riel es un círculo pequeño: un recuento de tres cifras no
+    // cabe, así que a partir de nueve se resume.
+    property <string> findings-badge: root.findings.length == 0 ? ""
+        : (root.findings.length > 9 ? "9+" : "" + root.findings.length);
 
     HorizontalLayout {
         // ── Riel de navegación ──
@@ -1168,7 +1234,7 @@ export component MainWindow inherits Window {
                         label: "Archivos sospechosos";
                         glyph: Icons.shield-alert;
                         current: root.screen == 2;
-                        badge: root.findings ? "2" : "";
+                        badge: root.findings-badge;
                         clicked => { root.screen = 2; }
                     }
                     NavRow {
@@ -1308,16 +1374,22 @@ export component MainWindow inherits Window {
                         visible: root.screen == 0;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
+                        has-database: root.has-database;
                         headline: root.headline;
                         message: root.message;
                         tone: root.tone;
                         glyph: root.tone-glyph;
                         action: root.action;
                         act => {
-                            if root.demo == 1 { root.screen = 2; }
-                            else if root.demo == 3 { root.screen = 5; }
-                            else { root.scan-requested(); }
+                            if root.scanning { root.screen = 1; }
+                            else if root.has-findings { root.screen = 2; }
+                            else {
+                                // «Analizar todo el equipo» empieza por el disco
+                                // del sistema, aunque se hubiera elegido antes
+                                // una carpeta o un archivo.
+                                root.scope = 0;
+                                root.scan-requested();
+                            }
                         }
                     }
 
@@ -1325,23 +1397,27 @@ export component MainWindow inherits Window {
                         visible: root.screen == 1;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
-                        progress: root.progress;
+                        scanning: root.scanning;
+                        scanned: root.scanned;
+                        current-file: root.current-file;
                         chosen-path: root.file-path;
+                        scope <=> root.scope;
                         scan-all => { root.scan-requested(); }
-                        scan-one => { root.scan-requested(); }
-                        stop => { root.demo = 0; }
+                        pick-folder => { root.pick-folder(); }
+                        pick-file => { root.pick-file(); }
+                        cancel-scan => { root.cancel-scan(); }
                     }
 
                     ResultsScreen {
                         visible: root.screen == 2;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
+                        findings: root.findings;
                         headline: root.results-headline;
+                        expanded <=> root.expanded-row;
                         go(x) => { root.screen = x; }
-                        quarantine(x) => { root.screen = 3; }
-                        ignore(x) => { root.demo = 0; }
+                        quarantine(x) => { root.quarantine(x); }
+                        ignore(x) => { root.ignore(x); }
                     }
 
                     SafeScreen {
