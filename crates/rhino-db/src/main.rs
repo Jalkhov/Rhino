@@ -11,7 +11,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signer, SigningKey};
 
@@ -138,7 +137,11 @@ fn build(args: &[String]) -> Result<(), String> {
     let hashes = HashList::from_hex(declared).map_err(|error| error.to_string())?;
     let hashes_bytes = hashes.to_binary();
 
-    let (version, created) = utc_now();
+    let now = rhino_core::time::now_unix();
+    let (version, created) = (
+        rhino_core::time::utc_date(now),
+        rhino_core::time::utc_rfc3339(now),
+    );
     let manifest = Manifest {
         format: FORMAT,
         version: version.clone(),
@@ -319,77 +322,13 @@ fn restrict(_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Fecha y hora actual en UTC: `AAAA.MM.DD` y RFC 3339.
-///
-/// La conversión de días desde la época al calendario es el algoritmo de Howard
-/// Hinnant. Está aquí, y no en una dependencia, porque es lo único que hacía
-/// falta de una biblioteca de fechas.
-fn utc_now() -> (String, String) {
-    let seconds = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let (year, month, day) = civil_from_days((seconds / 86_400) as i64);
-
-    let time = seconds % 86_400;
-    (
-        format!("{year:04}.{month:02}.{day:02}"),
-        format!(
-            "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-            time / 3600,
-            (time % 3600) / 60,
-            time % 60
-        ),
-    )
-}
-
-/// Días desde el 1 de enero de 1970 al año, mes y día del calendario gregoriano.
-fn civil_from_days(days: i64) -> (i64, u32, u32) {
-    let shifted = days + 719_468;
-    let era = if shifted >= 0 {
-        shifted
-    } else {
-        shifted - 146_096
-    } / 146_097;
-    let day_of_era = (shifted - era * 146_097) as u64;
-    let year_of_era =
-        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era as i64 + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * day_of_year + 2) / 153;
-
-    let day = (day_of_year - (153 * shifted_month + 2) / 5 + 1) as u32;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    } as u32;
-
-    (if month <= 2 { year + 1 } else { year }, month, day)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn the_epoch_is_the_first_of_january_1970() {
-        assert_eq!(civil_from_days(0), (1970, 1, 1));
-    }
-
-    #[test]
-    fn a_leap_day_is_handled() {
-        assert_eq!(civil_from_days(19_782), (2024, 2, 29));
-    }
-
-    #[test]
-    fn a_recent_date_lines_up() {
-        assert_eq!(civil_from_days(20_744), (2026, 10, 18));
-    }
-
     #[test]
     fn the_manifest_version_is_a_date_and_the_timestamp_is_rfc3339() {
-        let (version, created) = utc_now();
+        let now = rhino_core::time::now_unix();
+        let version = rhino_core::time::utc_date(now);
+        let created = rhino_core::time::utc_rfc3339(now);
 
         assert_eq!(version.len(), 10, "{version}");
         assert_eq!(version.matches('.').count(), 2, "{version}");

@@ -6,14 +6,20 @@
 pub mod corpus;
 pub mod db;
 mod hash;
+pub mod history;
+mod paths;
 mod pe;
+pub mod quarantine;
 pub mod rules;
 mod scan;
+pub mod time;
 pub mod update;
 
 pub use db::{Database, DbError, HashList, Manifest, Package};
 pub use hash::{decode_hex, is_sha256_hex, sha256_hex, sha256_hex_reader, to_hex};
+pub use history::{History, ScanRun};
 pub use pe::{PeFile, PeSection};
+pub use quarantine::{Quarantine, QuarantineError, StoredFile};
 pub use rules::{RuleMatch, RuleSet};
 pub use scan::{FileKind, Finding, Layer, ScanReport, Verdict, scan_bytes, scan_dir, scan_file};
 pub use update::{UpdateError, update};
