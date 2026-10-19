@@ -29,12 +29,19 @@ export global Theme {
     out property <color> accent: #1767E2;
     out property <color> accent-deep: #145DCD;
 
+    // El mismo azul, aclarado, para lo que se dibuja fino: filetes, puntos, aros y
+    // barras. El acento de relleno sobre Theme.card da 1.95:1, y para identificar un
+    // componente la medida mínima son 3:1; este da 3.31:1 sobre la tarjeta y 3.85:1
+    // sobre el fondo. Es el mismo recurso que en el rojo (danger para las marcas
+    // finas, danger-fill para el relleno y su texto blanco encima).
+    out property <color> accent-mark: #4C97E8;
+
     // Controles. Un botón que no es el principal tiene que verse como un botón y no
     // como la tarjeta en la que vive: de ahí un relleno propio, más claro que
     // Theme.card, en vez de un filete de un tono casi idéntico.
     out property <color> control: #4B555F;
     out property <color> control-hover: #59636D;
-    out property <color> ink-off: #8B96A1; // tinta de lo deshabilitado
+    out property <color> ink-off: #C0CAD4; // tinta de lo deshabilitado (4.57:1 sobre control)
 
     // Tinta
     out property <color> ink: #FFFFFF;

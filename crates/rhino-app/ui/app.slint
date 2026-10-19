@@ -265,7 +265,7 @@ component ScopeCard inherits Rectangle {
     // enfocado, y eso no es lo que está pasando aquí.
     background: touch.has-hover ? #414A53 : Theme.card;
     border-width: 2px;
-    border-color: root.current ? Theme.accent : transparent;
+    border-color: root.current ? Theme.accent-mark : transparent;
 
     HorizontalLayout {
         padding-left: 18px;
@@ -308,7 +308,7 @@ component ScopeCard inherits Rectangle {
                 height: 20px;
                 border-radius: 10px;
                 border-width: 2px;
-                border-color: root.current ? Theme.accent : Theme.rule;
+                border-color: root.current ? Theme.accent-mark : Theme.ink-muted;
                 background: transparent;
 
                 Rectangle {
@@ -318,7 +318,7 @@ component ScopeCard inherits Rectangle {
                     width: 10px;
                     height: 10px;
                     border-radius: 5px;
-                    background: Theme.accent;
+                    background: Theme.accent-mark;
                 }
             }
         }
@@ -675,7 +675,7 @@ component AnalyzeScreen inherits Rectangle {
                         width: parent.width * root.progress;
                         height: parent.height;
                         border-radius: 3px;
-                        background: Theme.accent;
+                        background: Theme.accent-mark;
                     }
                 }
 
