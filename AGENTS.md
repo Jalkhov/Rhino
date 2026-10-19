@@ -33,6 +33,17 @@ de defectos reales medidos en pantalla, no de la teoría; cada una costó una ro
    espaciador final (pasó: los tres textos del panel de progreso quedaron a 50 px unos de otros
    donde el `spacing` marcaba 12 px).
 
+17. **El sobrante de un layout se reparte entre TODOS sus hijos sin `stretch`**, no desaparece:
+    un `vertical-stretch: 0` no salva a una tarjeta si comparte el layout con otro hijo que
+    tampoco se estira (el pie de pantalla, por ejemplo); los dos crecen. Para que la tarjeta
+    abrace su contenido, envuélvela en un `VerticalLayout { vertical-stretch: 1; alignment:
+    center; }` que se quede el sobrante (pasó: el estado vacío de «Poner a salvo» medía 321 px
+    para dos líneas de texto).
+
+18. **Lo que se mide con el ancho de otros se elide.** La ruta de un hallazgo va en su propia
+    fila, a todo el ancho: compartiendo fila con la insignia y dos botones se cortaba (pasó con
+    `C:\Usuarios\Ana\Descargas\instalador.exe`).
+
 8. `@children` funciona dentro de un componente que hereda de un layout (así está hecho `Mid`).
 
 ## Texto y medidas

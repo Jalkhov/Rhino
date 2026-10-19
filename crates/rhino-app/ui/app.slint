@@ -260,7 +260,10 @@ component ScopeCard inherits Rectangle {
 
     height: 104px;
     border-radius: Theme.r-md;
-    background: root.current ? #2C3D57 : (touch.has-hover ? #414A53 : Theme.card);
+    // La elegida NO cambia de relleno: se marca con el borde y con el círculo de
+    // la derecha. Teñir la tarjeta de azul la convertía en un campo de texto
+    // enfocado, y eso no es lo que está pasando aquí.
+    background: touch.has-hover ? #414A53 : Theme.card;
     border-width: 2px;
     border-color: root.current ? Theme.accent : transparent;
 
@@ -297,12 +300,26 @@ component ScopeCard inherits Rectangle {
             }
         }
 
+        // Un círculo con punto: el idioma de "elige una de estas" que cualquiera
+        // reconoce sin que haya que explicarlo.
         Mid {
-            Icon {
-                visible: root.current;
-                glyph: Icons.check;
-                box: 18px;
-                tint: Theme.ink;
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                border-width: 2px;
+                border-color: root.current ? Theme.accent : Theme.rule;
+                background: transparent;
+
+                Rectangle {
+                    visible: root.current;
+                    x: 5px;
+                    y: 5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background: Theme.accent;
+                }
             }
         }
     }
@@ -349,7 +366,6 @@ component FindingRow inherits Rectangle {
             }
 
             VerticalLayout {
-                spacing: 3px;
                 horizontal-stretch: 1;
                 alignment: center;
 
@@ -358,13 +374,6 @@ component FindingRow inherits Rectangle {
                     font-size: Theme.t-lg;
                     font-weight: 600;
                     color: Theme.ink;
-                    overflow: elide;
-                }
-
-                Text {
-                    text: root.path;
-                    font-size: Theme.t-xs;
-                    color: Theme.ink-muted;
                     overflow: elide;
                 }
             }
@@ -396,6 +405,15 @@ component FindingRow inherits Rectangle {
             }
         }
 
+        // La ruta va en su propia linea y a todo el ancho: compartiendo fila con la
+        // insignia y los dos botones se cortaba con puntos suspensivos.
+        Text {
+            text: root.path;
+            font-size: Theme.t-xs;
+            color: Theme.ink-muted;
+            overflow: elide;
+        }
+
         Text {
             text: root.reason;
             font-size: Theme.t-sm;
@@ -405,6 +423,7 @@ component FindingRow inherits Rectangle {
 
         AppButton {
             width: 216px;
+            height: 32px;
             quiet: true;
             label: root.expanded ? "Ocultar la comprobación" : "Ver la comprobación";
             clicked => { root.toggle(); }
@@ -797,36 +816,43 @@ component SafeScreen inherits Rectangle {
             SafeRow { name: "toolbar_setup.exe"; origin: "Descargas"; when: "el lunes a las 19:52"; }
         }
 
-        if root.demo != 1 : Rectangle {
+        // El envoltorio se queda el sobrante: si no, la tarjeta lo comparte con el
+        // pie y crece hasta llenar la pantalla para decir dos lineas.
+        if root.demo != 1 : VerticalLayout {
             vertical-stretch: 1;
-            background: Theme.card;
-            border-radius: Theme.r-md;
+            alignment: center;
 
-            VerticalLayout {
-                alignment: center;
-                spacing: 12px;
+            Rectangle {
+                background: Theme.card;
+                border-radius: Theme.r-md;
 
-                HorizontalLayout {
+                VerticalLayout {
                     alignment: center;
-                    Icon { glyph: Icons.archive; box: 34px; tint: Theme.ink-muted; }
-                }
+                    spacing: 12px;
+                    padding: 24px;
 
-                Text {
-                    text: "No hay nada apartado";
-                    font-size: Theme.t-xl;
-                    font-weight: 600;
-                    color: Theme.ink;
-                    horizontal-alignment: center;
-                }
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { glyph: Icons.archive; box: 34px; tint: Theme.ink-muted; }
+                    }
 
-                Text {
-                    text: root.demo == 3
-                        ? "Todavía no hay protección instalada, así que tampoco hay nada que apartar."
-                        : "Lo que resulte sospechoso aparecerá aquí, y podrás recuperarlo cuando quieras.";
-                    font-size: Theme.t-md;
-                    color: Theme.ink-muted;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
+                    Text {
+                        text: "No hay nada apartado";
+                        font-size: Theme.t-xl;
+                        font-weight: 600;
+                        color: Theme.ink;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.demo == 3
+                            ? "Todavía no hay protección instalada, así que tampoco hay nada que apartar."
+                            : "Lo que resulte sospechoso aparecerá aquí, y podrás recuperarlo cuando quieras.";
+                        font-size: Theme.t-md;
+                        color: Theme.ink-muted;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
                 }
             }
         }
@@ -857,8 +883,8 @@ component HistoryScreen inherits Rectangle {
             spacing: 12px;
 
             Text { text: "Cuándo"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 140px; vertical-alignment: center; }
-            Text { text: "Qué se analizó"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 200px; vertical-alignment: center; }
-            Text { text: "Archivos"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 80px; vertical-alignment: center; }
+            Text { text: "Qué se analizó"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 190px; vertical-alignment: center; }
+            Text { text: "Archivos"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 72px; vertical-alignment: center; }
             Text { text: "Resultado"; font-size: Theme.t-sm; color: Theme.ink-muted; horizontal-stretch: 1; vertical-alignment: center; }
         }
 
@@ -891,7 +917,7 @@ component HistoryScreen inherits Rectangle {
                     text: h == 0 || h == 2 || h == 4 ? "Todo el equipo" : "Tu carpeta de descargas";
                     font-size: Theme.t-md;
                     color: Theme.ink-soft;
-                    width: 200px;
+                    width: 190px;
                     vertical-alignment: center;
                     overflow: elide;
                 }
@@ -900,7 +926,7 @@ component HistoryScreen inherits Rectangle {
                     text: h == 0 ? "18.204" : (h == 1 ? "312" : (h == 2 ? "17.980" : (h == 3 ? "44" : "18.011")));
                     font-size: Theme.t-md;
                     color: Theme.ink-muted;
-                    width: 80px;
+                    width: 72px;
                     vertical-alignment: center;
                 }
 
