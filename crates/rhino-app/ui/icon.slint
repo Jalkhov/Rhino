@@ -1,0 +1,59 @@
+// Iconos Lucide incrustados como fuente: un solo archivo, cualquier color, sin
+// rasterizar nada. Lucide es ISC y varios de sus iconos vienen de Feather (MIT);
+// ambos avisos están en fonts/LUCIDE-LICENSE.txt.
+import "./fonts/lucide.ttf";
+import { Theme } from "theme.slint";
+
+// Cada icono de la fuente vive en un punto de código propio. Se nombran una vez
+// aquí y se usan por nombre desde el resto de la interfaz.
+export global Icons {
+    out property <string> home: "\u{e0f5}";
+    out property <string> scan: "\u{e257}";
+    out property <string> scan-search: "\u{e537}";
+    out property <string> search: "\u{e151}";
+    out property <string> shield: "\u{e158}";
+    out property <string> shield-check: "\u{e1ff}";
+    out property <string> shield-alert: "\u{e1fe}";
+    out property <string> shield-off: "\u{e15a}";
+    out property <string> archive: "\u{e041}";
+    out property <string> folder: "\u{e0d7}";
+    out property <string> folder-open: "\u{e247}";
+    out property <string> file: "\u{e0cc}";
+    out property <string> monitor: "\u{e11d}";
+    out property <string> clock: "\u{e087}";
+    out property <string> settings: "\u{e154}";
+    out property <string> refresh: "\u{e145}";
+    out property <string> download: "\u{e0b2}";
+    out property <string> alert: "\u{e193}";
+    out property <string> check: "\u{e06c}";
+    out property <string> check-circle: "\u{e226}";
+    out property <string> close: "\u{e1b2}";
+    out property <string> ban: "\u{e051}";
+    out property <string> info: "\u{e0f9}";
+    out property <string> chevron-right: "\u{e06f}";
+    out property <string> rotate: "\u{e148}";
+    out property <string> trash: "\u{e18e}";
+    out property <string> activity: "\u{e038}";
+}
+
+component Icon {
+    in property <string> glyph;
+    in property <length> box: 18px;
+    in property <color> tint: Theme.ink-soft;
+
+    width: root.box;
+    height: root.box;
+
+    Text {
+        text: root.glyph;
+        font-family: "lucide";
+        font-size: root.box;
+        color: root.tint;
+        width: root.box;
+        height: root.box;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export { Icon }

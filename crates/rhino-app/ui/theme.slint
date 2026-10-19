@@ -1,0 +1,67 @@
+// Tokens visuales de Rhino.
+//
+// Anclados en la interfaz real de Avira Free Security, medida píxel a píxel en
+// docs/referencias/avira-free-security.png y registrada en PRODUCT.md: superficies
+// planas, azul naval, un solo acento azul y un solo verde de "está bien".
+//
+// Regla de color, sin excepciones: el rojo marca "aquí hay algo que te importa" y
+// solo aparece en los hallazgos (punto, filete, distintivo). Ningún botón es rojo.
+// El azul es lo que se pulsa; el verde, lo que está bien; el ámbar, lo que falta.
+//
+// Los valores de estado están elegidos por contraste medido, no por gusto: sobre
+// estas superficies oscuras un rojo saturado (#E11920) solo es legible relleno con
+// texto blanco encima (4.8:1), así que las marcas rojas finas usan #FF6B6B (3.6:1,
+// suficiente para un punto o un filete) y el distintivo usa el relleno saturado.
+export global Theme {
+    // Superficies
+    out property <color> ground: #313940; // fondo del contenido
+    out property <color> card: #3A434B; // tarjeta y superficie elevada
+    out property <color> rail: #1B2428; // riel de navegación
+    out property <color> sunken: #2B323A; // campos y zonas hundidas
+    out property <color> tile: #2C343A; // círculo de las acciones grandes
+
+    // Filetes de 1 px
+    out property <color> rule: #434C54; // sobre tarjeta
+    out property <color> rule-soft: #3A434B; // sobre el fondo
+    out property <color> rail-rule: #232B30; // separación riel / contenido
+
+    // Acento: lo que se pulsa
+    out property <color> accent: #1767E2;
+    out property <color> accent-deep: #145DCD;
+
+    // Controles. Un botón que no es el principal tiene que verse como un botón y no
+    // como la tarjeta en la que vive: de ahí un relleno propio, más claro que
+    // Theme.card, en vez de un filete de un tono casi idéntico.
+    out property <color> control: #4B555F;
+    out property <color> control-hover: #59636D;
+    out property <color> ink-off: #8B96A1; // tinta de lo deshabilitado
+
+    // Tinta
+    out property <color> ink: #FFFFFF;
+    out property <color> ink-soft: #C9D1DA;
+    out property <color> ink-muted: #A7B0B9;
+
+    // Estado
+    out property <color> ok: #168900; // relleno del visto
+    out property <color> ok-text: #4ECB71; // verde legible como texto
+    out property <color> warn: #F2B95A;
+    out property <color> danger: #FF6B6B; // marcas rojas finas sobre oscuro
+    out property <color> danger-fill: #E11920; // relleno con texto blanco encima (4.8:1)
+
+    // Escala tipográfica. Subida dos veces tras los avisos del usuario ("la fuente es
+    // demasiado pequeña"): se lee en un monitor de escritorio, no en un móvil. La
+    // tipografía va incrustada (Inter), así que estos píxeles significan lo mismo en
+    // Linux y en Windows. En Slint un Text ocupa el alto que le da su contenedor, así
+    // que el centrado vertical se pide aparte con vertical-alignment: center.
+    out property <length> t-xs: 13px;
+    out property <length> t-sm: 14px;
+    out property <length> t-md: 15px;
+    out property <length> t-lg: 17px;
+    out property <length> t-xl: 23px;
+    out property <length> t-2xl: 32px;
+
+    // Radios
+    out property <length> r-sm: 4px;
+    out property <length> r-md: 6px;
+    out property <length> r-pill: 999px;
+}

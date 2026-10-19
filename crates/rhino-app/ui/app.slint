@@ -1,52 +1,1350 @@
-import { Button, HorizontalBox, LineEdit, VerticalBox } from "std-widgets.slint";
+// Rhino — maqueta de la interfaz (Fase 4).
+//
+// Anclada en la interfaz real de Avira Free Security (medida en
+// docs/referencias/avira-free-security.png): superficies planas, azul naval, un
+// solo acento azul, verde para "está bien", ámbar para lo que falta y minúsculas
+// corrientes en los rótulos. Nada de mayúsculas grabadas, filetes de latón ni
+// agujas de dial.
+//
+// Regla de color: el rojo marca "aquí hay algo que te importa" y solo aparece en
+// los hallazgos (punto, filete, distintivo). Ningún botón es rojo.
+//
+// Regla de densidad, que manda sobre todo lo demás: **una pantalla dice una cosa y
+// ofrece una acción**. Un usuario poco técnico no debe tener que elegir dónde
+// mirar. Todo lo que no ayude a decidir se va a la pantalla que le toca.
+//
+// Los datos son de ejemplo y están rotulados como tales: la maqueta no inventa
+// detecciones, autorías ni actualizaciones reales.
 
-export component MainWindow inherits Window {
-    title: "Rhino";
-    width: 480px;
-    height: 320px;
+// La tipografía va incrustada: la interfaz no depende de las fuentes del sistema, y
+// las de Windows no miden como las de Linux. Inter (SIL OFL 1.1) en los tres pesos que
+// usa la maqueta; el aviso está en fonts/INTER-LICENSE.txt. Se usan los TTF estáticos y
+// no el variable: Slint indexa por familia y peso y el variable se quedaría en el 400.
+import "./fonts/Inter-Regular.ttf";
+import "./fonts/Inter-SemiBold.ttf";
+import "./fonts/Inter-Bold.ttf";
+import { Theme } from "theme.slint";
+import { Icon, Icons } from "icon.slint";
 
-    in property <string> version;
+// ── Piezas ────────────────────────────────────────────────────────────────────
 
-    in-out property <string> file-path;
-    in-out property <string> status: "Listo";
-    in-out property <bool> scanning: false;
+component Rule inherits Rectangle {
+    height: 1px;
+    background: Theme.rule;
+}
 
-    callback scan-requested();
+// Centra verticalmente una pieza de tamaño fijo (un icono, un distintivo, una
+// lámpara, un botón) dentro de una fila. Una fila NO centra sola: pega al inicio
+// lo que no puede estirar.
+component Mid inherits VerticalLayout {
+    alignment: center;
+    @children
+}
 
-    VerticalBox {
-        padding: 16px;
+// Botón. Lo que se pulsa es azul; lo secundario, un relleno neutro; lo terciario,
+// texto con filete. Todo lo que no es el principal lleva filete, para que se lea
+// como un control sobre la tarjeta. Lo deshabilitado NO se aclara con opacidad (eso
+// apaga también el filete): cambia a tinta apagada sobre el mismo relleno.
+component AppButton inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph: "";
+    in property <bool> primary: true;
+    in property <bool> quiet: false;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: 38px;
+    border-radius: Theme.r-sm;
+    // Ojo con el orden: `primary` es true por defecto, así que `quiet` se comprueba
+    // ANTES. Al revés, todo botón que solo pidiera `quiet` salía azul.
+    background: !root.enabled ? Theme.control
+              : root.quiet ? (touch.has-hover ? Theme.control : transparent)
+              : root.primary ? (touch.has-hover ? Theme.accent-deep : Theme.accent)
+              : (touch.has-hover ? Theme.control-hover : Theme.control);
+    border-width: root.primary && !root.quiet ? 0px : 1px;
+    border-color: Theme.rule;
+
+    HorizontalLayout {
+        alignment: center;
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+
+        if root.glyph != "" : Mid {
+            Icon {
+                glyph: root.glyph;
+                box: 16px;
+                tint: root.enabled ? Theme.ink : Theme.ink-off;
+            }
+        }
+
+        Text {
+            text: root.label;
+            font-size: Theme.t-md;
+            font-weight: 600;
+            color: !root.enabled ? Theme.ink-off : (root.quiet ? Theme.ink-soft : Theme.ink);
+            vertical-alignment: center; // sin esto la etiqueta se pega al borde de arriba
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { if root.enabled { root.clicked(); } }
+    }
+}
+
+// Tarjeta. Título en blanco y contenido debajo.
+component Panel inherits Rectangle {
+    in property <string> title: "";
+
+    background: Theme.card;
+    border-radius: Theme.r-md;
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+
+        if root.title != "" : Text {
+            text: root.title;
+            font-size: Theme.t-lg;
+            font-weight: 600;
+            color: Theme.ink;
+        }
+
+        @children
+    }
+}
+
+// Insignia de estado: relleno saturado con texto encima. Es la forma más legible
+// de decir "peligroso" sobre una superficie oscura.
+component Badge inherits Rectangle {
+    in property <string> label;
+    in property <color> tone: Theme.danger-fill;
+
+    height: 22px;
+    border-radius: Theme.r-pill;
+    background: root.tone;
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-size: Theme.t-xs;
+            font-weight: 700;
+            color: root.tone == Theme.warn ? Theme.rail : Theme.ink;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Fila del riel. La activa se rellena de azul a todo el ancho, como en Avira.
+component NavRow inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    in property <bool> current: false;
+    in property <string> badge: "";
+    callback clicked;
+
+    height: 38px;
+    background: root.current ? Theme.accent : (touch.has-hover ? #242E35 : transparent);
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
         spacing: 10px;
 
-        Text {
-            text: "Rhino";
-            font-size: 26px;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: "v" + root.version;
-            horizontal-alignment: center;
-        }
-
-        HorizontalBox {
-            spacing: 8px;
-
-            LineEdit {
-                placeholder-text: "Ruta del archivo a escanear";
-                text <=> root.file-path;
+        Mid {
+            Icon {
+                glyph: root.glyph;
+                box: 17px;
+                tint: root.current ? Theme.ink : Theme.ink-soft;
             }
-            Button {
-                text: "Escanear";
-                enabled: !root.scanning;
-                clicked => {
-                    root.scan-requested();
+        }
+
+        Text {
+            text: root.label;
+            font-size: Theme.t-md;
+            color: root.current ? Theme.ink : Theme.ink-soft;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        if root.badge != "" : Mid {
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.danger-fill;
+
+                Text {
+                    text: root.badge;
+                    font-size: Theme.t-xs;
+                    font-weight: 700;
+                    color: Theme.ink;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// La tarjeta de estado de Avira: un círculo con un visto, un titular y una
+// explicación. Es lo primero y casi lo único que se ve en Inicio.
+component StatusCard inherits Rectangle {
+    in property <color> tone: Theme.ok;
+    in property <string> glyph: Icons.check;
+    in property <string> headline;
+    in property <string> message;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 60px;
+                height: 60px;
+                border-radius: 30px;
+                background: root.tone;
+
+                Icon {
+                    glyph: root.glyph;
+                    box: 30px;
+                    tint: #FFFFFF;
+                    x: (parent.width - 30px) / 2;
+                    y: (parent.height - 30px) / 2;
                 }
             }
         }
 
         Text {
-            text: root.status;
+            text: root.headline;
+            font-size: Theme.t-2xl;
+            font-weight: 600;
+            color: Theme.ink;
+            horizontal-alignment: center;
             wrap: word-wrap;
-            vertical-alignment: top;
+        }
+
+        Text {
+            text: root.message;
+            font-size: Theme.t-md;
+            color: Theme.ink-soft;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Una opción de análisis. La elegida se marca con el acento, no con otro color.
+component ScopeCard inherits Rectangle {
+    in property <string> glyph;
+    in property <string> title;
+    in property <string> hint;
+    in property <bool> current: false;
+    callback clicked;
+
+    height: 104px;
+    border-radius: Theme.r-md;
+    background: root.current ? #2C3D57 : (touch.has-hover ? #414A53 : Theme.card);
+    border-width: 2px;
+    border-color: root.current ? Theme.accent : transparent;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+
+        Mid {
+            Icon {
+                glyph: root.glyph;
+                box: 26px;
+                tint: root.current ? Theme.ink : Theme.ink-soft;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 4px;
+            horizontal-stretch: 1;
+            alignment: center;
+
+            Text {
+                text: root.title;
+                font-size: Theme.t-lg;
+                font-weight: 600;
+                color: Theme.ink;
+            }
+
+            Text {
+                text: root.hint;
+                font-size: Theme.t-sm;
+                color: Theme.ink-muted;
+                wrap: word-wrap;
+            }
+        }
+
+        Mid {
+            Icon {
+                visible: root.current;
+                glyph: Icons.check;
+                box: 18px;
+                tint: Theme.ink;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ── Filas de datos ────────────────────────────────────────────────────────────
+
+// Un hallazgo: lámpara, nombre, motivo plegado y una sola acción que importa.
+component FindingRow inherits Rectangle {
+    in property <string> name;
+    in property <string> path;
+    in property <string> level: "PELIGROSO";
+    in property <string> reason;
+    in property <string> rule-id;
+    in property <string> rule-author;
+    in property <string> rule-source;
+    in property <bool> expanded: false;
+    callback toggle;
+    callback quarantine;
+    callback ignore;
+
+    background: Theme.card;
+    border-radius: Theme.r-md;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            Mid {
+                Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background: root.level == "PELIGROSO" ? Theme.danger : Theme.warn;
+                }
+            }
+
+            VerticalLayout {
+                spacing: 3px;
+                horizontal-stretch: 1;
+                alignment: center;
+
+                Text {
+                    text: root.name;
+                    font-size: Theme.t-lg;
+                    font-weight: 600;
+                    color: Theme.ink;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: root.path;
+                    font-size: Theme.t-xs;
+                    color: Theme.ink-muted;
+                    overflow: elide;
+                }
+            }
+
+            Mid {
+                Badge {
+                    label: root.level;
+                    tone: root.level == "PELIGROSO" ? Theme.danger-fill : Theme.warn;
+                }
+            }
+
+            Mid {
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    AppButton {
+                        width: 146px;
+                        label: "Poner a salvo";
+                        clicked => { root.quarantine(); }
+                    }
+
+                    AppButton {
+                        width: 104px;
+                        quiet: true;
+                        label: "Ignorar";
+                        clicked => { root.ignore(); }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: root.reason;
+            font-size: Theme.t-sm;
+            color: Theme.ink-soft;
+            wrap: word-wrap;
+        }
+
+        AppButton {
+            width: 216px;
+            quiet: true;
+            label: root.expanded ? "Ocultar la comprobación" : "Ver la comprobación";
+            clicked => { root.toggle(); }
+        }
+
+        if root.expanded : Rectangle {
+            background: Theme.sunken;
+            border-radius: Theme.r-sm;
+
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: "Comprobación"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 104px; }
+                    Text { text: root.rule-id; font-size: Theme.t-sm; color: Theme.ink-soft; horizontal-stretch: 1; overflow: elide; }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: "Autor"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 104px; }
+                    Text { text: root.rule-author; font-size: Theme.t-sm; color: Theme.ink-soft; horizontal-stretch: 1; overflow: elide; }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: "Origen"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 104px; }
+                    Text { text: root.rule-source; font-size: Theme.t-sm; color: Theme.ink-soft; horizontal-stretch: 1; overflow: elide; }
+                }
+
+                Text {
+                    text: "Datos de ejemplo. En el producto esta ficha siempre dice de dónde salió la comprobación.";
+                    font-size: Theme.t-xs;
+                    color: Theme.ink-muted;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+// Un archivo apartado.
+component SafeRow inherits Rectangle {
+    in property <string> name;
+    in property <string> origin;
+    in property <string> when;
+    callback restore;
+    callback erase;
+
+    height: 64px;
+    background: Theme.card;
+    border-radius: Theme.r-md;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
+
+        Mid {
+            Icon { glyph: Icons.archive; box: 18px; tint: Theme.ink-soft; }
+        }
+
+        VerticalLayout {
+            spacing: 3px;
+            horizontal-stretch: 1;
+            alignment: center;
+
+            Text { text: root.name; font-size: Theme.t-md; color: Theme.ink; overflow: elide; }
+            Text { text: root.origin + " · apartado el " + root.when; font-size: Theme.t-xs; color: Theme.ink-muted; overflow: elide; }
+        }
+
+        Mid {
+            HorizontalLayout {
+                spacing: 10px;
+
+                AppButton {
+                    width: 150px;
+                    glyph: Icons.rotate;
+                    label: "Recuperar";
+                    clicked => { root.restore(); }
+                }
+
+                AppButton {
+                    width: 96px;
+                    quiet: true;
+                    label: "Borrar";
+                    clicked => { root.erase(); }
+                }
+            }
+        }
+    }
+}
+
+// ── Pantallas ─────────────────────────────────────────────────────────────────
+
+// Inicio: el estado del equipo, dicho en una frase, y una sola acción que hacer.
+component HomeScreen inherits Rectangle {
+    in property <int> demo;
+    in property <string> headline;
+    in property <string> message;
+    in property <color> tone;
+    in property <string> glyph;
+    in property <string> action;
+    callback act;
+
+    VerticalLayout {
+        alignment: center;
+        padding-left: 56px;
+        padding-right: 56px;
+        spacing: 26px;
+
+        StatusCard {
+            tone: root.tone;
+            glyph: root.glyph;
+            headline: root.headline;
+            message: root.message;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+
+            AppButton {
+                width: 280px;
+                height: 44px;
+                label: root.action;
+                clicked => { root.act(); }
+            }
+        }
+
+        if root.demo == 3 : Text {
+            text: "Mientras falten, Rhino no puede reconocer nada. Preferimos decírtelo antes que dejarte confiado.";
+            font-size: Theme.t-sm;
+            color: Theme.ink-muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Analizar: se elige una cosa y se pulsa un botón.
+component AnalyzeScreen inherits Rectangle {
+    in property <int> demo;
+    in property <string> chosen-path;
+    in-out property <float> progress: 0;
+    in-out property <int> scope: 0;
+    callback scan-all;
+    callback scan-one;
+    callback stop;
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 16px;
+
+        Text {
+            text: "¿Qué quieres analizar?";
+            font-size: Theme.t-lg;
+            color: Theme.ink-soft;
+        }
+
+        HorizontalLayout {
+            height: 104px;
+            spacing: 14px;
+
+            ScopeCard {
+                horizontal-stretch: 1;
+                glyph: Icons.monitor;
+                title: "Todo el equipo";
+                hint: "Discos completos";
+                current: root.scope == 0;
+                clicked => { root.scope = 0; }
+            }
+
+            ScopeCard {
+                horizontal-stretch: 1;
+                glyph: Icons.folder;
+                title: "Una carpeta";
+                hint: "Lo que haya dentro";
+                current: root.scope == 1;
+                clicked => { root.scope = 1; }
+            }
+
+            ScopeCard {
+                horizontal-stretch: 1;
+                glyph: Icons.file;
+                title: "Un archivo";
+                hint: "Solo uno";
+                current: root.scope == 2;
+                clicked => { root.scope = 2; }
+            }
+        }
+
+        if root.scope != 0 : Rectangle {
+            height: 46px;
+            background: Theme.sunken;
+            border-radius: Theme.r-sm;
+
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 8px;
+                spacing: 12px;
+
+                Mid {
+                    Icon {
+                        glyph: root.scope == 1 ? Icons.folder-open : Icons.file;
+                        box: 16px;
+                        tint: Theme.ink-soft;
+                    }
+                }
+
+                Text {
+                    text: root.chosen-path == "" ? "Todavía no has elegido nada" : root.chosen-path;
+                    font-size: Theme.t-sm;
+                    color: root.chosen-path == "" ? Theme.ink-muted : Theme.ink;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Mid {
+                    AppButton {
+                        width: 190px;
+                        label: "Elegir con Windows";
+                        clicked => { root.scan-one(); }
+                    }
+                }
+            }
+        }
+
+        if root.demo == 2 : Rectangle {
+            background: Theme.card;
+            border-radius: Theme.r-md;
+            // Sin esto el panel se reparte el sobrante con el espaciador final y
+            // lo absorben sus tres textos, que quedan separados por huecos de 50 px.
+            vertical-stretch: 0;
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+
+                Text { text: "Analizando"; font-size: Theme.t-lg; font-weight: 600; color: Theme.ink; }
+
+                Rectangle {
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.sunken;
+
+                    Rectangle {
+                        width: parent.width * root.progress;
+                        height: parent.height;
+                        border-radius: 3px;
+                        background: Theme.accent;
+                    }
+                }
+
+                Text {
+                    text: "Ahora mismo: C:\\Usuarios\\Ana\\Descargas\\instalador.exe";
+                    font-size: Theme.t-sm;
+                    color: Theme.ink-soft;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: "12.480 archivos mirados · 0 sospechosos · quedan unos 4 minutos";
+                    font-size: Theme.t-sm;
+                    color: Theme.ink-muted;
+                    overflow: elide;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+
+                    AppButton {
+                        width: 132px;
+                        primary: false;
+                        label: "Detener";
+                        clicked => { root.stop(); }
+                    }
+                }
+            }
+        }
+
+        if root.demo != 2 : VerticalLayout {
+            alignment: center;
+            spacing: 10px;
+
+            // El botón tiene ancho fijo: quien lo centra es la fila que lo envuelve,
+            // porque `alignment` solo actúa sobre el eje principal del layout.
+            HorizontalLayout {
+                alignment: center;
+
+                AppButton {
+                    width: 268px;
+                    height: 44px;
+                    label: root.scope == 0 ? "Analizar todo el equipo"
+                         : (root.scope == 1 ? "Analizar esa carpeta" : "Analizar ese archivo");
+                    clicked => { root.scan-all(); }
+                }
+            }
+
+            Text {
+                text: "Puedes seguir usando el equipo mientras analizamos.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-muted;
+                horizontal-alignment: center;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+// Los hallazgos: qué se encontró y qué se puede hacer.
+component ResultsScreen inherits Rectangle {
+    in property <int> demo;
+    in property <string> headline;
+    in-out property <int> expanded: -1;
+    callback go(int);
+    callback quarantine(int);
+    callback ignore(int);
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            Text {
+                text: root.headline;
+                font-size: Theme.t-xl;
+                font-weight: 600;
+                color: Theme.ink;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Text { text: "Datos de ejemplo"; font-size: Theme.t-xs; color: Theme.ink-muted; vertical-alignment: center; }
+        }
+
+        FindingRow {
+            name: "instalador.exe";
+            path: "C:\\Usuarios\\Ana\\Descargas\\instalador.exe";
+            level: "PELIGROSO";
+            reason: "Intenta abrir una conexión a un servidor conocido por repartir programas dañinos. No hemos ejecutado nada: solo lo hemos leído.";
+            rule-id: "rhino/suspicious-downloader";
+            rule-author: "Equipo de reglas de Rhino";
+            rule-source: "https://ejemplo.invalido/reglas/suspicious-downloader";
+            expanded: root.expanded == 0;
+            toggle => { root.expanded = root.expanded == 0 ? -1 : 0; }
+            quarantine => { root.quarantine(0); }
+            ignore => { root.ignore(0); }
+        }
+
+        FindingRow {
+            name: "crack_v3.zip";
+            path: "C:\\Usuarios\\Ana\\Escritorio\\crack_v3.zip";
+            level: "SOSPECHOSO";
+            reason: "Dentro hay un programa que se disfraza de otra cosa para que no lo reconozcas. Coincide con uno que ya se ha visto antes.";
+            rule-id: "rhino/renamed-executable";
+            rule-author: "Equipo de reglas de Rhino";
+            rule-source: "https://ejemplo.invalido/reglas/renamed-executable";
+            expanded: root.expanded == 1;
+            toggle => { root.expanded = root.expanded == 1 ? -1 : 1; }
+            quarantine => { root.quarantine(1); }
+            ignore => { root.ignore(1); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+// Poner a salvo: lo apartado, y nada más.
+component SafeScreen inherits Rectangle {
+    in property <int> demo;
+    in property <string> count;
+    callback go(int);
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 12px;
+
+        if root.demo == 1 : VerticalLayout {
+            spacing: 10px;
+            vertical-stretch: 1;
+
+            SafeRow { name: "instalador.exe"; origin: "Descargas"; when: "hoy a las 21:14"; }
+            SafeRow { name: "crack_v3.zip"; origin: "Escritorio"; when: "hoy a las 21:14"; }
+            SafeRow { name: "toolbar_setup.exe"; origin: "Descargas"; when: "el lunes a las 19:52"; }
+        }
+
+        if root.demo != 1 : Rectangle {
+            vertical-stretch: 1;
+            background: Theme.card;
+            border-radius: Theme.r-md;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    alignment: center;
+                    Icon { glyph: Icons.archive; box: 34px; tint: Theme.ink-muted; }
+                }
+
+                Text {
+                    text: "No hay nada apartado";
+                    font-size: Theme.t-xl;
+                    font-weight: 600;
+                    color: Theme.ink;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: root.demo == 3
+                        ? "Todavía no hay protección instalada, así que tampoco hay nada que apartar."
+                        : "Lo que resulte sospechoso aparecerá aquí, y podrás recuperarlo cuando quieras.";
+                    font-size: Theme.t-md;
+                    color: Theme.ink-muted;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        Text {
+            text: root.demo == 1
+                ? root.count + " archivos apartados. Nada se borra hasta que tú lo decidas."
+                : "Apartar un archivo no lo borra: lo guarda Rhino para que no pueda hacer nada.";
+            font-size: Theme.t-sm;
+            color: Theme.ink-muted;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Historial: la tabla, sin adornos alrededor.
+component HistoryScreen inherits Rectangle {
+    in property <int> demo;
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 0px;
+
+        HorizontalLayout {
+            height: 32px;
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 12px;
+
+            Text { text: "Cuándo"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 140px; vertical-alignment: center; }
+            Text { text: "Qué se analizó"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 200px; vertical-alignment: center; }
+            Text { text: "Archivos"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 80px; vertical-alignment: center; }
+            Text { text: "Resultado"; font-size: Theme.t-sm; color: Theme.ink-muted; horizontal-stretch: 1; vertical-alignment: center; }
+        }
+
+        Rule {}
+
+        for h in [0, 1, 2, 3, 4] : Rectangle {
+            height: 46px;
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.rail-rule;
+            }
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 12px;
+
+                Text {
+                    text: h == 0 ? "Hoy, 21:14" : (h == 1 ? "Ayer, 20:02" : (h == 2 ? "Lunes, 19:40" : (h == 3 ? "Domingo, 12:05" : "Sábado, 11:20")));
+                    font-size: Theme.t-md;
+                    color: Theme.ink-soft;
+                    width: 140px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: h == 0 || h == 2 || h == 4 ? "Todo el equipo" : "Tu carpeta de descargas";
+                    font-size: Theme.t-md;
+                    color: Theme.ink-soft;
+                    width: 200px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: h == 0 ? "18.204" : (h == 1 ? "312" : (h == 2 ? "17.980" : (h == 3 ? "44" : "18.011")));
+                    font-size: Theme.t-md;
+                    color: Theme.ink-muted;
+                    width: 80px;
+                    vertical-alignment: center;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    horizontal-stretch: 1;
+
+                    Mid {
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: h == 0 && root.demo == 1 ? Theme.danger : Theme.ok;
+                        }
+                    }
+
+                    Text {
+                        text: h == 0 && root.demo == 1 ? "2 sospechosos" : "Nada sospechoso";
+                        font-size: Theme.t-md;
+                        color: Theme.ink-soft;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "Datos de ejemplo. El historial no sale de tu equipo.";
+            font-size: Theme.t-xs;
+            color: Theme.ink-muted;
+            vertical-stretch: 1;
+        }
+    }
+}
+
+// Ajustes: lo que se toca de vez en cuando, en tres bloques.
+component SettingsScreen inherits Rectangle {
+    in property <int> demo;
+    in property <string> version;
+    in property <string> core-status;
+    callback go(int);
+
+    VerticalLayout {
+        // alignment: start para que los tres paneles tomen su alto natural: sin
+        // esto el sobrante de la pantalla se reparte entre ellos y el hueco
+        // interior de cada tarjeta crece.
+        alignment: start;
+        padding: 28px;
+        spacing: 14px;
+
+        Panel {
+            title: "Protección";
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                Mid {
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        border-radius: 5px;
+                        background: root.demo == 3 ? Theme.warn : Theme.ok;
+                    }
+                }
+
+                Text {
+                    text: root.demo == 3
+                        ? "Sin datos de protección"
+                        : "Al día · actualizada hace 6 días";
+                    font-size: Theme.t-md;
+                    color: Theme.ink-soft;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+
+                Mid {
+                    AppButton {
+                        width: 208px;
+                        primary: root.demo == 3;
+                        label: "Actualizar la protección";
+                        clicked => { }
+                    }
+                }
+            }
+        }
+
+        Panel {
+            title: "Qué no debe mirar";
+
+            Text {
+                text: "Todavía no has añadido ninguna carpeta.";
+                font-size: Theme.t-md;
+                color: Theme.ink-muted;
+            }
+
+            Text {
+                text: "Rhino deja en paz lo que añadas aquí. Sirve para tus ficheros de trabajo o tus propias herramientas.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-muted;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+
+                AppButton { width: 176px; primary: false; glyph: Icons.folder-open; label: "Añadir carpeta"; clicked => { } }
+                AppButton { width: 104px; primary: false; quiet: true; label: "Quitar"; enabled: false; clicked => { } }
+            }
+        }
+
+        Panel {
+            title: "Acerca de Rhino";
+
+            Text { text: "Rhino " + root.version; font-size: Theme.t-md; color: Theme.ink; }
+
+            Text {
+                text: "Gratis, sin cuentas y sin enviar nada de tu equipo a ninguna parte. Consume poco y no interrumpe.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-soft;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: "Iconos de Lucide (ISC), en parte de Feather (MIT). El estado del núcleo es: " + root.core-status;
+                font-size: Theme.t-xs;
+                color: Theme.ink-muted;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+// ── Ventana ───────────────────────────────────────────────────────────────────
+
+export component MainWindow inherits Window {
+    title: "Rhino";
+    width: 980px;
+    height: 680px;
+    background: Theme.ground;
+
+    // Un solo sitio donde se fija la tipografía: así ningún Text se queda con la
+    // fuente del sistema ni con un tamaño suelto.
+    default-font-family: "Inter";
+    default-font-size: Theme.t-md;
+    default-font-weight: 400;
+
+    in property <string> version;
+    in-out property <string> file-path;
+    in-out property <string> status: "Listo";
+    in-out property <bool> scanning: false;
+    in-out property <int> screen: 0;
+    in-out property <int> demo: 0;
+    in-out property <float> progress: 0;
+
+    callback scan-requested();
+
+    // Lo que la maqueta demuestra según el estado elegido. Cada estado dice una
+    // sola cosa y ofrece una sola acción.
+    property <bool> findings: root.demo == 1;
+    property <color> tone: root.demo == 3 ? Theme.warn : (root.findings ? Theme.danger-fill : Theme.ok);
+    property <string> tone-glyph: root.demo == 3 ? Icons.alert : (root.findings ? Icons.shield-alert : Icons.check);
+    property <string> headline: root.findings
+        ? "Encontramos 2 archivos sospechosos"
+        : (root.demo == 3 ? "Falta actualizar la protección" : "Tu equipo está protegido");
+    property <string> message: root.findings
+        ? "Los hemos apartado para que no puedan hacer nada. Puedes recuperarlos si sabes que son tuyos."
+        : (root.demo == 3
+            ? "A Rhino le faltan los datos con los que reconoce lo dañino."
+            : "No hay nada que hacer. Rhino seguirá vigilando sin molestarte.");
+    property <string> action: root.findings
+        ? "Ver los archivos sospechosos"
+        : (root.demo == 3 ? "Actualizar la protección" : "Analizar todo el equipo");
+    property <string> safe-count: "3";
+    property <string> results-headline: "2 archivos sospechosos";
+
+    // La barra de progreso de la maqueta: mientras "analiza", avanza sola.
+    Timer {
+        interval: 120ms;
+        running: root.demo == 2;
+        triggered => {
+            root.progress = root.progress >= 0.9 ? 0.1 : root.progress + 0.02;
+        }
+    }
+
+    HorizontalLayout {
+        // ── Riel de navegación ──
+        Rectangle {
+            width: 264px;
+            background: Theme.rail;
+
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                height: parent.height;
+                background: Theme.rail-rule;
+            }
+
+            VerticalLayout {
+                padding-top: 18px;
+                spacing: 0px;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-bottom: 20px;
+                    spacing: 10px;
+
+                    Mid {
+                        Icon { glyph: Icons.shield-check; box: 20px; tint: Theme.ink; }
+                    }
+
+                    Text {
+                        text: "Rhino";
+                        font-size: Theme.t-xl;
+                        font-weight: 700;
+                        color: Theme.ink;
+                        vertical-alignment: center;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 2px;
+
+                    NavRow {
+                        label: "Inicio";
+                        glyph: Icons.home;
+                        current: root.screen == 0;
+                        clicked => { root.screen = 0; }
+                    }
+                    NavRow {
+                        label: "Analizar";
+                        glyph: Icons.scan-search;
+                        current: root.screen == 1;
+                        clicked => { root.screen = 1; }
+                    }
+                    NavRow {
+                        label: "Archivos sospechosos";
+                        glyph: Icons.shield-alert;
+                        current: root.screen == 2;
+                        badge: root.findings ? "2" : "";
+                        clicked => { root.screen = 2; }
+                    }
+                    NavRow {
+                        label: "Poner a salvo";
+                        glyph: Icons.archive;
+                        current: root.screen == 3;
+                        clicked => { root.screen = 3; }
+                    }
+                    NavRow {
+                        label: "Historial";
+                        glyph: Icons.clock;
+                        current: root.screen == 4;
+                        clicked => { root.screen = 4; }
+                    }
+                    NavRow {
+                        label: "Ajustes";
+                        glyph: Icons.settings;
+                        current: root.screen == 5;
+                        clicked => { root.screen = 5; }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Tira de estados: es parte de la maqueta, no del producto.
+                Rectangle {
+                    x: 12px;
+                    width: parent.width - 24px;
+                    background: #141A1E;
+                    border-width: 1px;
+                    border-color: #2A343A;
+                    border-radius: Theme.r-sm;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 7px;
+
+                        Text {
+                            text: "MAQUETA · ESTADO";
+                            font-size: Theme.t-xs;
+                            font-weight: 700;
+                            color: Theme.ink-muted;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            for d in [0, 1] : Rectangle {
+                                horizontal-stretch: 1;
+                                height: 26px;
+                                border-radius: 3px;
+                                background: root.demo == d ? Theme.ink : Theme.card;
+
+                                Text {
+                                    text: d == 0 ? "En orden" : "Con hallazgos";
+                                    font-size: Theme.t-xs;
+                                    color: root.demo == d ? Theme.rail : Theme.ink-soft;
+                                    width: parent.width;
+                                    height: parent.height;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.demo = d; root.screen = d == 1 ? 2 : 0; }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            for d in [2, 3] : Rectangle {
+                                horizontal-stretch: 1;
+                                height: 26px;
+                                border-radius: 3px;
+                                background: root.demo == d ? Theme.ink : Theme.card;
+
+                                Text {
+                                    text: d == 2 ? "Analizando" : "Sin datos";
+                                    font-size: Theme.t-xs;
+                                    color: root.demo == d ? Theme.rail : Theme.ink-soft;
+                                    width: parent.width;
+                                    height: parent.height;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.demo = d; root.screen = d == 2 ? 1 : 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Área de trabajo ──
+        // Ancho explícito: si se deja al tamaño implícito, la cadena de layouts
+        // resuelve por contenido y el área colapsa a ~689 px de los 780 reales.
+        Rectangle {
+            width: parent.width - 264px;
+
+            VerticalLayout {
+                Rectangle {
+                    width: parent.width;
+                    height: 56px;
+
+                    Rectangle {
+                        x: 0;
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: Theme.rail-rule;
+                    }
+
+                    Text {
+                        x: 28px;
+                        y: 16px;
+                        text: root.screen == 0 ? "Inicio"
+                            : (root.screen == 1 ? "Analizar"
+                            : (root.screen == 2 ? "Archivos sospechosos"
+                            : (root.screen == 3 ? "Poner a salvo"
+                            : (root.screen == 4 ? "Historial" : "Ajustes"))));
+                        font-size: Theme.t-xl;
+                        font-weight: 600;
+                        color: Theme.ink;
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width;
+                    vertical-stretch: 1;
+
+                    HomeScreen {
+                        visible: root.screen == 0;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                        headline: root.headline;
+                        message: root.message;
+                        tone: root.tone;
+                        glyph: root.tone-glyph;
+                        action: root.action;
+                        act => {
+                            if root.demo == 1 { root.screen = 2; }
+                            else if root.demo == 3 { root.screen = 5; }
+                            else { root.scan-requested(); }
+                        }
+                    }
+
+                    AnalyzeScreen {
+                        visible: root.screen == 1;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                        progress: root.progress;
+                        chosen-path: root.file-path;
+                        scan-all => { root.scan-requested(); }
+                        scan-one => { root.scan-requested(); }
+                        stop => { root.demo = 0; }
+                    }
+
+                    ResultsScreen {
+                        visible: root.screen == 2;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                        headline: root.results-headline;
+                        go(x) => { root.screen = x; }
+                        quarantine(x) => { root.screen = 3; }
+                        ignore(x) => { root.demo = 0; }
+                    }
+
+                    SafeScreen {
+                        visible: root.screen == 3;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                        count: root.safe-count;
+                        go(x) => { root.screen = x; }
+                    }
+
+                    HistoryScreen {
+                        visible: root.screen == 4;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                    }
+
+                    SettingsScreen {
+                        visible: root.screen == 5;
+                        width: parent.width;
+                        height: parent.height;
+                        demo: root.demo;
+                        version: root.version;
+                        core-status: root.status;
+                        go(x) => { root.screen = x; }
+                    }
+                }
+            }
         }
     }
 }
