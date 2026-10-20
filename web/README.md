@@ -96,5 +96,5 @@ RHINO_DB_URL=http://localhost:27182/db/stable cargo run -p rhino-app
 O instalar el paquete directamente, sin pasar por la aplicación:
 
 ```sh
-cargo run -p rhino-db -- update http://localhost:27182/db/stable ~/.local/share/rhino/rhino-db
+cargo run -p rhino-db -- update http://localhost:27182/db/stable ~/.local/share/Rhino/rhino-db
 ```

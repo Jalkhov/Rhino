@@ -216,6 +216,15 @@ crece; no es un tope que haya que respetar.
 cargo run -p rhino-db -- update <url> <directorio>
 ```
 
+La aplicación lee la base de datos del perfil del usuario, no de la carpeta del
+programa: `%LOCALAPPDATA%\Rhino\rhino-db` en Windows y
+`~/.local/share/Rhino/rhino-db` (o `$XDG_DATA_HOME/Rhino/rhino-db`) en el resto. Para
+probar contra el sitio local:
+
+```sh
+cargo run -p rhino-db -- update http://localhost:27182/db/stable ~/.local/share/Rhino/rhino-db
+```
+
 El módulo **solo descarga**: quien tiene autoridad para aceptar un paquete es `db::Package`
 con la firma Ed25519, no el código que habla por la red. De ahí el reparto: `update` baja
 primero `manifest.json` y `manifest.sig`, comprueba la firma, y **solo si la versión es
@@ -377,8 +386,12 @@ Desde Ubuntu, con `cargo-xwin` (target MSVC de Microsoft, que Rust mantiene en T
 para 32 bits) más `clang-cl` y `lld-link`:
 
 ```sh
-XWIN_ARCH=x86 cargo xwin build --release --target i686-pc-windows-msvc
+XWIN_ARCH=x86 cargo xwin build --release -p rhino-app --target i686-pc-windows-msvc
 ```
+
+Se compila `-p rhino-app` y no el workspace entero a propósito: `cargo build --release`
+también construiría `rhino-db`, cuyo subcomando `keygen` fabrica claves de firma y no
+tiene ninguna razón para viajar al equipo del usuario.
 
 `XWIN_ARCH=x86` es obligatorio: el default de `cargo-xwin` no descarga las librerías de
 32 bits. Requiere `cargo install cargo-xwin` y un `lld-link` en el PATH (`rust-lld`

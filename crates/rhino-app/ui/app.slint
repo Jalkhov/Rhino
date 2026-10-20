@@ -527,7 +527,6 @@ component SafeRow inherits Rectangle {
 
 // Inicio: el estado del equipo, dicho en una frase, y una sola acción que hacer.
 component HomeScreen inherits Rectangle {
-    in property <bool> has-database: true;
     in property <string> headline;
     in property <string> message;
     in property <color> tone;
@@ -558,14 +557,6 @@ component HomeScreen inherits Rectangle {
                 clicked => { root.act(); }
             }
         }
-
-        if !root.has-database : Text {
-            text: "Mientras falten, Rhino no puede reconocer nada. Preferimos decírtelo antes que dejarte confiado.";
-            font-size: Theme.t-sm;
-            color: Theme.ink-muted;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
     }
 }
 
@@ -575,6 +566,7 @@ component HomeScreen inherits Rectangle {
 component AnalyzeScreen inherits Rectangle {
     in property <bool> scanning: false;
     in property <int> scanned: 0;
+    in property <int> failed: 0;
     in property <string> current-file: "";
     in property <string> chosen-path;
     in-out property <int> scope: 0;
@@ -582,6 +574,11 @@ component AnalyzeScreen inherits Rectangle {
     callback pick-folder();
     callback pick-file();
     callback cancel-scan();
+
+    // Lo que no se pudo leer se dice solo cuando hay algo que decir.
+    property <string> failures: root.failed == 0 ? ""
+        : (root.failed == 1 ? " · 1 no se pudo leer"
+            : " · " + root.failed + " no se pudieron leer");
 
     VerticalLayout {
         padding: 28px;
@@ -688,7 +685,7 @@ component AnalyzeScreen inherits Rectangle {
                 }
 
                 Text {
-                    text: root.scanned == 1 ? "1 archivo mirado" : root.scanned + " archivos mirados";
+                    text: (root.scanned == 1 ? "1 archivo mirado" : root.scanned + " archivos mirados") + root.failures;
                     font-size: Theme.t-sm;
                     color: Theme.ink-muted;
                     overflow: elide;
@@ -1125,8 +1122,13 @@ export component MainWindow inherits Window {
     in property <string> version;
     in property <[FindingItem]> findings;
     in property <int> scanned: 0;             // archivos ya analizados
+    in property <int> failed: 0;              // carpetas y archivos que no se pudieron leer
     in property <string> current-file: "";    // el que se está analizando ahora
     in property <bool> has-database: false;
+    in property <bool> has-scanned: false;    // hay algún análisis en el historial
+    in property <string> last-scan: "";       // «hoy a las 21:14»
+    in property <int> last-findings: 0;       // archivos con algo en la última revisión
+    in property <bool> show-demo: false;
     in-out property <string> file-path;
     in-out property <string> status: "Listo";
     in-out property <bool> scanning: false;
@@ -1142,32 +1144,54 @@ export component MainWindow inherits Window {
     callback quarantine(int);
     callback ignore(int);
 
-    // El estado de Inicio sale de los datos reales, en este orden: analizando,
-    // hallazgos, falta de datos y, si no, todo en orden.
+    // El estado de Inicio sale de tres hechos del disco, en este orden: se está
+    // analizando, falta la base de datos, y qué dejó la última revisión.
     property <bool> has-findings: root.findings.length > 0;
+    property <bool> findings-reset: root.last-findings > 0 && !root.has-findings;
+    property <string> reviewed: root.last-scan == "" ? "" : "Revisado " + root.last-scan + ". ";
     property <color> tone: root.scanning ? Theme.accent
-        : (root.has-findings ? Theme.danger-fill : (!root.has-database ? Theme.warn : Theme.ok));
+        : (!root.has-database ? Theme.warn
+        : (root.has-findings || root.findings-reset ? Theme.danger-fill
+        : (!root.has-scanned ? Theme.accent : Theme.ok)));
     property <string> tone-glyph: root.scanning ? Icons.search
-        : (root.has-findings ? Icons.shield-alert : (!root.has-database ? Icons.alert : Icons.check));
+        : (!root.has-database ? Icons.alert
+        : (root.has-findings || root.findings-reset ? Icons.shield-alert
+        : (!root.has-scanned ? Icons.search : Icons.check)));
     property <string> headline: root.scanning
         ? "Analizando tu equipo"
-        : (root.has-findings
-            ? (root.findings.length == 1
-                ? "Encontramos 1 archivo sospechoso"
-                : "Encontramos " + root.findings.length + " archivos sospechosos")
-            : (!root.has-database ? "Falta actualizar la protección" : "Tu equipo está protegido"));
+        : (!root.has-database
+            ? "Falta actualizar la protección"
+            : (root.has-findings
+                ? (root.findings.length == 1
+                    ? "Hay 1 archivo que mirar"
+                    : "Hay " + root.findings.length + " archivos que mirar")
+                : (root.findings-reset
+                    ? (root.last-findings == 1
+                        ? "La última revisión encontró 1 archivo"
+                        : "La última revisión encontró " + root.last-findings + " archivos")
+                    : (!root.has-scanned
+                        ? "Todavía no has mirado nada"
+                        : "Tu equipo está en orden"))));
     property <string> message: root.scanning
         ? "Puedes seguir usando el equipo mientras analizamos."
-        : (root.has-findings
-            ? "Míralos y decide qué hacer con ellos."
-            : (!root.has-database
-                ? "A Rhino le faltan los datos con los que reconoce lo dañino."
-                : "No hay nada que hacer. Rhino seguirá vigilando sin molestarte."));
+        : (!root.has-database
+            ? "Rhino aún no reconoce lo peligroso. Es una descarga de un momento."
+            : (root.has-findings
+                ? root.reviewed + "Rhino no ha tocado nada: decides tú."
+                : (root.findings-reset
+                    ? root.reviewed + "Analiza otra vez para revisarlos."
+                    : (!root.has-scanned
+                        ? "Un análisis completo tarda unos minutos y puedes seguir usando el equipo."
+                        : root.reviewed + "No se encontró nada."))));
     property <string> action: root.scanning
         ? "Ver el progreso"
-        : (root.has-findings
-            ? "Ver los archivos sospechosos"
-            : (!root.has-database ? "Actualizar la protección" : "Analizar todo el equipo"));
+        : (!root.has-database
+            ? "Actualizar la protección"
+            : (root.has-findings
+                ? "Ver los archivos"
+                : (root.findings-reset || !root.has-scanned
+                    ? "Analizar todo el equipo"
+                    : "Analizar otra vez")));
     property <string> safe-count: "3";
     property <string> results-headline: root.findings.length == 0
         ? "Ningún archivo sospechoso"
@@ -1259,8 +1283,10 @@ export component MainWindow inherits Window {
 
                 Rectangle { vertical-stretch: 1; }
 
-                // Tira de estados: es parte de la maqueta, no del producto.
+                // Tira de estados: es parte de la maqueta, no del producto, y solo
+                // existe en las compilaciones de desarrollo.
                 Rectangle {
+                    visible: root.show-demo;
                     x: 12px;
                     width: parent.width - 24px;
                     background: #141A1E;
@@ -1374,7 +1400,6 @@ export component MainWindow inherits Window {
                         visible: root.screen == 0;
                         width: parent.width;
                         height: parent.height;
-                        has-database: root.has-database;
                         headline: root.headline;
                         message: root.message;
                         tone: root.tone;
@@ -1382,7 +1407,7 @@ export component MainWindow inherits Window {
                         action: root.action;
                         act => {
                             if root.scanning { root.screen = 1; }
-                            else if root.has-findings { root.screen = 2; }
+                            else if root.has-findings && root.has-database { root.screen = 2; }
                             else {
                                 // «Analizar todo el equipo» empieza por el disco
                                 // del sistema, aunque se hubiera elegido antes
@@ -1399,6 +1424,7 @@ export component MainWindow inherits Window {
                         height: parent.height;
                         scanning: root.scanning;
                         scanned: root.scanned;
+                        failed: root.failed;
                         current-file: root.current-file;
                         chosen-path: root.file-path;
                         scope <=> root.scope;

@@ -94,6 +94,15 @@ pub struct Finding {
     pub rule: Option<RuleOrigin>,
 }
 
+/// Lo que dejó un recorrido de directorios.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScanSummary {
+    /// La bandera de parada se levantó antes de terminar.
+    pub stopped: bool,
+    /// Carpetas que no se pudieron listar y archivos que no se pudieron leer.
+    pub failed: u64,
+}
+
 /// Resultado completo de analizar un archivo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanReport {
@@ -224,20 +233,41 @@ pub fn scan_dir(
     database: &Database,
     mut on_report: impl FnMut(ScanReport),
 ) -> io::Result<()> {
-    walk(root.as_ref(), database, None, &mut on_report).map(|_| ())
+    walk(root.as_ref(), database, None, &mut on_report, &mut || {}).map(|_| ())
 }
 
-/// Igual que [`scan_dir`], pero se puede detener a mitad.
+/// Igual que [`scan_dir`], pero se puede detener a mitad y devuelve cuánto falló.
 ///
-/// Devuelve `false` si `stop` se levantó antes de terminar. La bandera se mira
-/// entre archivo y archivo: cortar a mitad de uno dejaría un informe a medias.
+/// `stopped` se levanta si `stop` se activó antes de terminar. `failed` cuenta las
+/// carpetas que no se pudieron listar y los archivos que no se pudieron leer: lo
+/// que el escaneo no miró no puede desaparecer del recuento.
 pub fn scan_dir_cancellable(
     root: impl AsRef<Path>,
     database: &Database,
     stop: &AtomicBool,
+    on_report: impl FnMut(ScanReport),
+) -> io::Result<ScanSummary> {
+    scan_dir_cancellable_with_failure(root, database, stop, on_report, || {})
+}
+
+/// Igual que [`scan_dir_cancellable`], avisando de cada fallo en cuanto ocurre.
+///
+/// El resumen solo llega al final; la interfaz necesita el aviso para poder
+/// enseñar los fallos mientras el análisis sigue.
+pub fn scan_dir_cancellable_with_failure(
+    root: impl AsRef<Path>,
+    database: &Database,
+    stop: &AtomicBool,
     mut on_report: impl FnMut(ScanReport),
-) -> io::Result<bool> {
-    walk(root.as_ref(), database, Some(stop), &mut on_report)
+    mut on_failure: impl FnMut(),
+) -> io::Result<ScanSummary> {
+    walk(
+        root.as_ref(),
+        database,
+        Some(stop),
+        &mut on_report,
+        &mut on_failure,
+    )
 }
 
 /// El paseo compartido: recorre el árbol y entrega cada informe a `on_report`.
@@ -246,14 +276,24 @@ fn walk(
     database: &Database,
     stop: Option<&AtomicBool>,
     on_report: &mut impl FnMut(ScanReport),
-) -> io::Result<bool> {
+    on_failure: &mut impl FnMut(),
+) -> io::Result<ScanSummary> {
+    let mut summary = ScanSummary::default();
+
     for entry in fs::read_dir(directory)? {
         if stop.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-            return Ok(false);
+            summary.stopped = true;
+            return Ok(summary);
         }
 
-        let Ok(entry) = entry else { continue };
+        let Ok(entry) = entry else {
+            summary.failed += 1;
+            on_failure();
+            continue;
+        };
         let Ok(file_type) = entry.file_type() else {
+            summary.failed += 1;
+            on_failure();
             continue;
         };
         let path = entry.path();
@@ -261,17 +301,32 @@ fn walk(
         if file_type.is_symlink() {
             continue;
         } else if file_type.is_dir() {
-            // Una subcarpeta sin permisos se omite, no aborta el escaneo.
-            if !walk(&path, database, stop, on_report).unwrap_or(true) {
-                return Ok(false);
+            // Una subcarpeta sin permisos no aborta el escaneo, pero se cuenta.
+            match walk(&path, database, stop, on_report, on_failure) {
+                Ok(child) => {
+                    summary.failed += child.failed;
+                    if child.stopped {
+                        summary.stopped = true;
+                        return Ok(summary);
+                    }
+                }
+                Err(_) => {
+                    summary.failed += 1;
+                    on_failure();
+                }
             }
-        } else if file_type.is_file()
-            && let Ok(report) = scan_file(&path, database)
-        {
-            on_report(report);
+        } else if file_type.is_file() {
+            match scan_file(&path, database) {
+                Ok(report) => on_report(report),
+                Err(_) => {
+                    summary.failed += 1;
+                    on_failure();
+                }
+            }
         }
     }
-    Ok(true)
+
+    Ok(summary)
 }
 
 /// Analiza datos que ya están en memoria. Pensado para pruebas.
@@ -686,7 +741,8 @@ rule rhino_test_eicar {
             completed.push(report)
         })
         .expect("el escaneo del directorio falló");
-        assert!(finished);
+        assert!(!finished.stopped);
+        assert_eq!(finished.failed, 0);
         assert_eq!(completed.len(), 8, "{completed:#?}");
 
         let stopped = AtomicBool::new(true);
@@ -695,7 +751,7 @@ rule rhino_test_eicar {
             partial.push(report)
         })
         .expect("el escaneo del directorio falló");
-        assert!(!finished);
+        assert!(finished.stopped);
         assert!(
             partial.len() < completed.len(),
             "con la bandera levantada no puede entregar los mismos informes: {} de {}",
@@ -704,6 +760,40 @@ rule rhino_test_eicar {
         );
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_folder_counts_as_a_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("rhino-fallos-{}", std::process::id()));
+        let locked = root.join("sin-permiso");
+        std::fs::create_dir_all(&locked).expect("no se pudo crear el árbol de prueba");
+        std::fs::write(root.join("notas.txt"), benign_text()).unwrap();
+        std::fs::write(locked.join("oculto.txt"), benign_text()).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // Como root se puede listar igual: la prueba no tendría nada que medir.
+        if std::fs::read_dir(&locked).is_ok() {
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::remove_dir_all(&root).ok();
+            return;
+        }
+
+        let running = AtomicBool::new(false);
+        let mut reports = Vec::new();
+        let summary = scan_dir_cancellable(&root, &Database::empty(), &running, |report| {
+            reports.push(report)
+        })
+        .expect("el escaneo del directorio falló");
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&root).ok();
+
+        assert_eq!(reports.len(), 1, "{reports:#?}");
+        assert!(summary.failed >= 1, "{summary:?}");
+        assert!(!summary.stopped);
     }
 
     #[test]

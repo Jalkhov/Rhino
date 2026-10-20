@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rhino-core = { path = "../rhino-core" }
 slint = { version = "1", default-features = false, features = [
     "std",

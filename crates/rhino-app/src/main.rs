@@ -5,9 +5,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use chrono::{DateTime, Local, TimeZone};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-use rhino_core::{Database, Quarantine, ScanReport, Verdict};
+use rhino_core::{Database, Quarantine, ScanReport, ScanRun, Verdict};
 
 slint::include_modules!();
 
@@ -27,6 +28,19 @@ impl ScanTarget {
             ScanTarget::File(_) => "Analizando ese archivo…",
         }
     }
+
+    /// Lo que se apunta en el historial, con el nombre cuando lo hay.
+    fn scope(&self) -> String {
+        match self {
+            ScanTarget::WholeComputer => "Todo el equipo".to_string(),
+            ScanTarget::Folder(path) => {
+                format!("Una carpeta: {}", file_name(&path.to_string_lossy()))
+            }
+            ScanTarget::File(path) => {
+                format!("Un archivo: {}", file_name(&path.to_string_lossy()))
+            }
+        }
+    }
 }
 
 /// Lo que hace falta para poner a salvo un hallazgo: su ruta y su huella. La fila
@@ -43,6 +57,7 @@ struct ScanShared {
     /// La levanta «Detener»; el recorrido la mira entre archivo y archivo.
     stop: Arc<AtomicBool>,
     scanned: Arc<AtomicUsize>,
+    failed: Arc<AtomicUsize>,
     rows: Arc<Mutex<Vec<RowTarget>>>,
 }
 
@@ -53,6 +68,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let database = Arc::new(load_database());
     window.set_has_database(!database.is_empty());
     window.set_status(status_for(database.version()).into());
+    window.set_show_demo(cfg!(debug_assertions));
+    load_last_scan(&window);
 
     // La lista de hallazgos vive en un VecModel: la interfaz la pinta y Rust la
     // llena desde el hilo de la interfaz, nunca desde el hilo del análisis.
@@ -63,6 +80,7 @@ fn main() -> Result<(), slint::PlatformError> {
         database,
         stop: Arc::new(AtomicBool::new(false)),
         scanned: Arc::new(AtomicUsize::new(0)),
+        failed: Arc::new(AtomicUsize::new(0)),
         rows: Arc::new(Mutex::new(Vec::new())),
     };
 
@@ -214,6 +232,7 @@ fn start_scan(
 ) {
     shared.stop.store(false, Ordering::Relaxed);
     shared.scanned.store(0, Ordering::Relaxed);
+    shared.failed.store(0, Ordering::Relaxed);
     findings_model.clear();
     if let Ok(mut rows) = shared.rows.lock() {
         rows.clear();
@@ -221,6 +240,7 @@ fn start_scan(
 
     window.set_expanded_row(-1);
     window.set_scanned(0);
+    window.set_failed(0);
     window.set_current_file("".into());
     window.set_scanning(true);
     window.set_status(target.message().into());
@@ -240,50 +260,93 @@ fn run_scan(
 ) {
     let mut suspects = 0usize;
     let mut stopped = false;
+    let mut failed = 0u64;
     let failure;
 
     {
         let mut on_report =
             |report: ScanReport| report_to_ui(weak_window, shared, report, &mut suspects);
 
+        // Los fallos se avisan en cuanto ocurren para que el recuento de la
+        // pantalla no espere al final del recorrido.
+        let failed_live = Arc::clone(&shared.failed);
+        let weak_failed = weak_window.clone();
+        let mut on_failure = move || {
+            let count = failed_live.fetch_add(1, Ordering::Relaxed) + 1;
+            let _ =
+                weak_failed.upgrade_in_event_loop(move |window| window.set_failed(count as i32));
+        };
+
         let outcome = match target {
             ScanTarget::File(path) => {
                 rhino_core::scan_file(path, &shared.database).map(&mut on_report)
             }
-            ScanTarget::Folder(root) => rhino_core::scan_dir_cancellable(
+            ScanTarget::Folder(root) => rhino_core::scan_dir_cancellable_with_failure(
                 root,
                 &shared.database,
                 &shared.stop,
                 &mut on_report,
+                &mut on_failure,
             )
-            .map(|finished| stopped = !finished),
-            ScanTarget::WholeComputer => rhino_core::scan_dir_cancellable(
+            .map(|summary| {
+                stopped = summary.stopped;
+                failed = summary.failed;
+            }),
+            ScanTarget::WholeComputer => rhino_core::scan_dir_cancellable_with_failure(
                 system_drive(),
                 &shared.database,
                 &shared.stop,
                 &mut on_report,
+                &mut on_failure,
             )
-            .map(|finished| stopped = !finished),
+            .map(|summary| {
+                stopped = summary.stopped;
+                failed = summary.failed;
+            }),
         };
 
         failure = outcome.err().map(|error| error.to_string());
     }
 
     let scanned = Arc::clone(&shared.scanned);
+    let files = scanned.load(Ordering::Relaxed) as u64;
+    let scope = target.scope();
     let _ = weak_window.upgrade_in_event_loop(move |window| {
         window.set_scanning(false);
         window.set_has_database(has_database);
+        window.set_failed(failed as i32);
         window.set_status(
-            match failure {
+            match &failure {
                 Some(error) => format!("No se pudo analizar: {error}"),
-                None if stopped => detained_status(scanned.load(Ordering::Relaxed)),
+                None if stopped => {
+                    format!("{}{}", detained_status(files as usize), failed_text(failed))
+                }
                 None => format!(
-                    "{} archivos analizados, {suspects} sospechosos",
-                    scanned.load(Ordering::Relaxed)
+                    "{files} archivos analizados, {suspects} sospechosos{}",
+                    failed_text(failed)
                 ),
             }
             .into(),
         );
+
+        // Un análisis fallido o detenido no se apunta: decir «revisado» de lo que
+        // no se terminó de mirar es justo lo que este arreglo evita.
+        if failure.is_none() && !stopped {
+            let run = ScanRun {
+                format: rhino_core::history::RUN_FORMAT,
+                when: rhino_core::time::now_unix(),
+                scope,
+                files,
+                findings: suspects as u64,
+            };
+            if let Ok(history) = rhino_core::History::open() {
+                let _ = history.append(&run);
+            }
+
+            window.set_has_scanned(true);
+            window.set_last_scan(when_text(run.when).into());
+            window.set_last_findings(suspects as i32);
+        }
     });
 }
 
@@ -417,6 +480,49 @@ fn detained_status(scanned: usize) -> String {
     }
 }
 
+/// Lo que no se pudo leer, solo cuando hay algo que decir.
+fn failed_text(failed: u64) -> String {
+    match failed {
+        0 => String::new(),
+        1 => " · 1 no se pudo leer".to_string(),
+        _ => format!(" · {failed} no se pudieron leer"),
+    }
+}
+
+/// Rellena en Inicio lo que dejó el último análisis apuntado en el historial.
+fn load_last_scan(window: &MainWindow) {
+    let last = rhino_core::History::open()
+        .and_then(|history| history.recent(1))
+        .ok()
+        .and_then(|runs| runs.into_iter().next());
+
+    let Some(run) = last else {
+        return;
+    };
+
+    window.set_has_scanned(true);
+    window.set_last_scan(when_text(run.when).into());
+    window.set_last_findings(run.findings as i32);
+}
+
+/// Un instante en palabras llanas, en la hora local del equipo.
+fn when_text(when: u64) -> String {
+    when_text_at(when, Local::now())
+}
+
+fn when_text_at(when: u64, now: DateTime<Local>) -> String {
+    let Some(at) = Local.timestamp_opt(when as i64, 0).single() else {
+        return String::new();
+    };
+
+    let time = at.format("%H:%M");
+    match (now.date_naive() - at.date_naive()).num_days() {
+        0 => format!("hoy a las {time}"),
+        1 => format!("ayer a las {time}"),
+        _ => format!("el {} a las {time}", at.format("%d-%m-%Y")),
+    }
+}
+
 /// La raíz del disco donde vive Windows.
 ///
 /// shortcut: solo mira ese disco (C: por defecto); los demás habrá que recorrerlos
@@ -449,5 +555,55 @@ fn status_for(version: Option<&str>) -> String {
     match version {
         Some(version) => format!("Listo · base de datos {version}"),
         None => "Listo · sin base de datos".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Local> {
+        Local
+            .with_ymd_and_hms(year, month, day, hour, minute, 0)
+            .single()
+            .expect("la hora de prueba existe en este huso")
+    }
+
+    #[test]
+    fn the_last_review_is_spoken_in_plain_words() {
+        let now = at(2026, 10, 20, 18, 0);
+
+        assert_eq!(
+            when_text_at(at(2026, 10, 20, 9, 5).timestamp() as u64, now),
+            "hoy a las 09:05"
+        );
+        assert_eq!(
+            when_text_at(at(2026, 10, 19, 9, 5).timestamp() as u64, now),
+            "ayer a las 09:05"
+        );
+        assert_eq!(
+            when_text_at(at(2026, 10, 18, 21, 14).timestamp() as u64, now),
+            "el 18-10-2026 a las 21:14"
+        );
+    }
+
+    #[test]
+    fn failures_only_appear_when_there_are_some() {
+        assert_eq!(failed_text(0), "");
+        assert_eq!(failed_text(1), " · 1 no se pudo leer");
+        assert_eq!(failed_text(3), " · 3 no se pudieron leer");
+    }
+
+    #[test]
+    fn the_history_names_what_was_scanned() {
+        assert_eq!(ScanTarget::WholeComputer.scope(), "Todo el equipo");
+        assert_eq!(
+            ScanTarget::Folder(PathBuf::from("/tmp/Descargas")).scope(),
+            "Una carpeta: Descargas"
+        );
+        assert_eq!(
+            ScanTarget::File(PathBuf::from("/tmp/setup.exe")).scope(),
+            "Un archivo: setup.exe"
+        );
     }
 }

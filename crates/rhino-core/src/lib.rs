@@ -7,6 +7,7 @@ pub mod corpus;
 pub mod db;
 mod hash;
 pub mod history;
+pub mod ignores;
 mod paths;
 mod pe;
 pub mod quarantine;
@@ -18,12 +19,13 @@ pub mod update;
 pub use db::{Database, DbError, HashList, Manifest, Package};
 pub use hash::{decode_hex, is_sha256_hex, sha256_hex, sha256_hex_reader, to_hex};
 pub use history::{History, ScanRun};
+pub use ignores::{Ignored, IgnoredFile};
 pub use pe::{PeFile, PeSection};
 pub use quarantine::{Quarantine, QuarantineError, StoredFile};
 pub use rules::{RuleMatch, RuleSet};
 pub use scan::{
-    FileKind, Finding, Layer, RuleOrigin, ScanReport, Verdict, scan_bytes, scan_dir,
-    scan_dir_cancellable, scan_file,
+    FileKind, Finding, Layer, RuleOrigin, ScanReport, ScanSummary, Verdict, scan_bytes, scan_dir,
+    scan_dir_cancellable, scan_dir_cancellable_with_failure, scan_file,
 };
 pub use update::{UpdateError, update};
 

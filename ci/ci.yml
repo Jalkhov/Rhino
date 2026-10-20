@@ -70,7 +70,9 @@ jobs:
         env:
           # El default de cargo-xwin no incluye las librerias de 32 bits.
           XWIN_ARCH: ${{ matrix.xwin_arch }}
-        run: cargo xwin build --release --target ${{ matrix.target }}
+        # Solo rhino-app: el workspace entero incluye rhino-db, cuyo keygen no
+        # debe viajar en el artefacto del usuario.
+        run: cargo xwin build --release -p rhino-app --target ${{ matrix.target }}
 
       - name: Comprobar que es un ejecutable de Windows
         run: file "target/${{ matrix.target }}/release/rhino-app.exe"

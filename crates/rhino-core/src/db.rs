@@ -259,10 +259,10 @@ fn parse_manifest(manifest: &[u8]) -> Result<Manifest, DbError> {
     Ok(manifest)
 }
 
-/// Directorio por defecto de la base de datos: junto al ejecutable.
+/// Directorio por defecto de la base de datos: en los datos del usuario, no junto
+/// al ejecutable, que puede ser de solo lectura y compartido entre usuarios.
 pub fn default_directory() -> Option<PathBuf> {
-    let executable = std::env::current_exe().ok()?;
-    Some(executable.parent()?.join("rhino-db"))
+    Some(crate::paths::data_directory().ok()?.join("rhino-db"))
 }
 
 /// Todo lo que el escaneo necesita de la base de datos.
@@ -644,5 +644,15 @@ rule rhino_test_eicar {
         fs::remove_dir_all(&directory).ok();
         fs::create_dir_all(&directory).unwrap();
         directory
+    }
+
+    #[test]
+    fn the_default_database_lives_in_the_user_profile() {
+        let Some(directory) = default_directory() else {
+            return;
+        };
+
+        assert_eq!(directory.file_name().unwrap(), "rhino-db");
+        assert_eq!(directory.parent().unwrap().file_name().unwrap(), "Rhino");
     }
 }

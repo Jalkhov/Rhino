@@ -4642,6 +4642,7 @@ dependencies = [
 name = "rhino-app"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rfd",
  "rhino-core",
  "slint",
