@@ -3,7 +3,7 @@
 Una página, escrita para que quien llegue nuevo (o una sesión nueva) sepa qué hay de
 verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
 
-Última actualización: 20-10-2026, tras la fase 5a (Inicio honesto).
+Última actualización: 20-10-2026, tras la fase 5b («Poner a salvo» e «Historial» reales).
 
 ## Qué funciona de verdad
 
@@ -12,18 +12,22 @@ verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
   punta con el archivo de prueba EICAR y una regla firmada con la clave de producción.
 - **Hallazgos con su origen.** Capa que lo encontró, motivo en llano e identificador, autor
   y dirección de la regla (lo exige la licencia DRL 1.1).
-- **Poner a salvo.** Mueve el archivo a `<datos>/Rhino/apartados`, guarda su ficha y deja la
-  fila fuera de la lista. El núcleo sabe listar, recuperar y borrar.
-- **Historial.** El núcleo escribe una línea por análisis en `<datos>/Rhino/historial.jsonl`.
+- **Poner a salvo.** «Poner a salvo» mueve el archivo a `<datos>/Rhino/apartados`, guarda su
+  ficha y deja la fila fuera de la lista. La pantalla enseña lo apartado, lo recupera a su
+  sitio y lo borra solo cuando se pide. Dos copias del mismo contenido no se pisan: la
+  segunda se rechaza sin tocar ninguna.
+- **Historial.** Cada análisis terminado escribe una línea en
+  `<datos>/Rhino/historial.jsonl` y la pantalla enseña los últimos 20, con fecha local
+  (`DD-MM-YYYY HH:mm`), alcance, archivos y resultado.
 - **Base de datos firmada.** Paquete con manifiesto y firma Ed25519, verificado al cargar;
   actualizador con descarga aparte y cambio por directorio completo.
 - **Privacidad.** Nada sale del equipo salvo la actualización de la base de datos.
 
 ## Qué es maqueta
 
-- **«Poner a salvo», «Historial» y «Ajustes»** siguen enseñando datos de ejemplo
-  (`demo` en `ui/app.slint`). La tira «MAQUETA · ESTADO» solo aparece en compilaciones de
-  desarrollo.
+- **«Ajustes»** sigue enseñando datos de ejemplo (`demo` en `ui/app.slint`). La tira
+  «MAQUETA · ESTADO» solo aparece en compilaciones de desarrollo y ya solo cambia Ajustes;
+  «Poner a salvo» e «Historial» leen del disco.
 - **«Ignorar»** quita la fila de la lista, pero no se recuerda al cerrar la app.
 - **«Actualizar la protección»** no descarga: no está conectado al actualizador del núcleo.
 
@@ -43,6 +47,9 @@ verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
 - **Sin teclado ni lector de pantalla.** Todo se maneja con ratón, no hay foco visible ni
   etiquetas `accessible-*`.
 - **Falsos positivos sin medir** sobre programas instalados de verdad.
+- **Los mensajes de estado no tienen línea visible.** «Recuperado en…», «Borrado» y los
+  errores van a `status`, pero ese texto solo se ve al final de Ajustes: falta un pie en las
+  pantallas que actúan (5d).
 
 ## Cómo se comprueba
 
@@ -56,6 +63,6 @@ las filas del riel. El contraste lo comprueba `crates/rhino-app/tests/contraste.
 
 ## Siguiente rebanada
 
-Fase 5b («Poner a salvo» e «Historial» con datos reales), 5c
-(«Ajustes» reales y «Actualizar» conectado), 5d (teclado, foco, ventana que quepa a 150 %).
-El plan completo, con criterios de aceptación, está en `REPORT_1017.md`.
+Fase 5c («Ajustes» reales y «Actualizar» conectado), 5d (teclado, foco, pie de estado y
+ventana que quepa a 150 %). El plan completo, con criterios de aceptación, está en
+`REPORT_1017.md`.

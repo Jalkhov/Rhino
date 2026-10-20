@@ -1,5 +1,6 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -8,7 +9,9 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Local, TimeZone};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
-use rhino_core::{Database, Quarantine, ScanReport, ScanRun, Verdict};
+use rhino_core::{
+    Database, History, Quarantine, QuarantineError, ScanReport, ScanRun, StoredFile, Verdict,
+};
 
 slint::include_modules!();
 
@@ -75,6 +78,21 @@ fn main() -> Result<(), slint::PlatformError> {
     // llena desde el hilo de la interfaz, nunca desde el hilo del análisis.
     let findings_model = Rc::new(VecModel::<FindingItem>::default());
     window.set_findings(ModelRc::from(findings_model.clone()));
+
+    // Lo apartado y el historial salen del disco al arrancar. El vector de fichas
+    // va en paralelo al modelo: la fila `i` de la pantalla es `safe_rows[i]`.
+    let safe_model = Rc::new(VecModel::<SafeItem>::default());
+    window.set_safe_items(ModelRc::from(safe_model.clone()));
+    let safe_rows = Rc::new(RefCell::new(Vec::<StoredFile>::new()));
+    if let Err(error) = reload_safe(&window, &safe_model, &safe_rows) {
+        window.set_status(format!("No se pudo leer lo que está apartado: {error}").into());
+    }
+
+    let history_model = Rc::new(VecModel::<HistoryItem>::default());
+    window.set_history(ModelRc::from(history_model.clone()));
+    if let Err(error) = reload_history(&window) {
+        window.set_status(format!("No se pudo leer el historial: {error}").into());
+    }
 
     let shared = ScanShared {
         database,
@@ -170,6 +188,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let weak_window = window.as_weak();
     let rows = Arc::clone(&shared.rows);
+    let safe_model_on_quarantine = safe_model.clone();
+    let safe_rows_on_quarantine = safe_rows.clone();
     window.on_quarantine(move |index| {
         let Some(window) = weak_window.upgrade() else {
             return;
@@ -190,12 +210,23 @@ fn main() -> Result<(), slint::PlatformError> {
             Ok(_) => {
                 remove_row(&rows, index);
                 remove_finding(&window, index);
+                let _ = reload_safe(
+                    &window,
+                    &safe_model_on_quarantine,
+                    &safe_rows_on_quarantine,
+                );
                 window.set_status(
                     format!(
                         "{} está a salvo: ya no puede hacer nada.",
                         file_name(&target.path)
                     )
                     .into(),
+                );
+            }
+            // La fila se queda: no se ha tocado nada y el archivo sigue donde estaba.
+            Err(QuarantineError::Occupied(_)) => {
+                window.set_status(
+                    "Ya hay un archivo igual apartado: no se ha tocado nada.".into(),
                 );
             }
             Err(error) => {
@@ -217,6 +248,60 @@ fn main() -> Result<(), slint::PlatformError> {
         remove_row(&rows, index);
         remove_finding(&window, index);
         window.set_status("Lo hemos ignorado esta vez.".into());
+    });
+
+    let weak_window = window.as_weak();
+    let safe_model_on_restore = safe_model.clone();
+    let safe_rows_on_restore = safe_rows.clone();
+    window.on_restore(move |index| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let index = index as usize;
+        let Some(sha256) = safe_rows_on_restore
+            .borrow()
+            .get(index)
+            .map(|entry| entry.sha256.clone())
+        else {
+            return;
+        };
+
+        match Quarantine::open().and_then(|shelter| shelter.restore(&sha256)) {
+            Ok(origin) => {
+                let _ = reload_safe(&window, &safe_model_on_restore, &safe_rows_on_restore);
+                window.set_status(format!("Recuperado en {}", origin.display()).into());
+            }
+            Err(error) => {
+                window.set_status(format!("No se pudo recuperar: {error}").into());
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let safe_model_on_erase = safe_model.clone();
+    let safe_rows_on_erase = safe_rows.clone();
+    window.on_erase(move |index| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let index = index as usize;
+        let Some(sha256) = safe_rows_on_erase
+            .borrow()
+            .get(index)
+            .map(|entry| entry.sha256.clone())
+        else {
+            return;
+        };
+
+        match Quarantine::open().and_then(|shelter| shelter.erase(&sha256)) {
+            Ok(()) => {
+                let _ = reload_safe(&window, &safe_model_on_erase, &safe_rows_on_erase);
+                window.set_status("Borrado".into());
+            }
+            Err(error) => {
+                window.set_status(format!("No se pudo borrar: {error}").into());
+            }
+        }
     });
 
     window.run()
@@ -339,9 +424,10 @@ fn run_scan(
                 files,
                 findings: suspects as u64,
             };
-            if let Ok(history) = rhino_core::History::open() {
+            if let Ok(history) = History::open() {
                 let _ = history.append(&run);
             }
+            let _ = reload_history(&window);
 
             window.set_has_scanned(true);
             window.set_last_scan(when_text(run.when).into());
@@ -455,6 +541,114 @@ fn remove_row(rows: &Mutex<Vec<RowTarget>>, index: usize) {
     }
 }
 
+/// Vuelve a leer lo apartado y lo deja en el modelo y en el vector paralelo.
+fn reload_safe(
+    window: &MainWindow,
+    model: &Rc<VecModel<SafeItem>>,
+    stored: &Rc<RefCell<Vec<StoredFile>>>,
+) -> Result<(), QuarantineError> {
+    let entries = match Quarantine::open().and_then(|shelter| shelter.list()) {
+        Ok(entries) => {
+            window.set_safe_problem("".into());
+            entries
+        }
+        Err(error) => {
+            window.set_safe_problem(
+                format!("No se pudo leer lo que está apartado: {error}").into(),
+            );
+            return Err(error);
+        }
+    };
+
+    model.clear();
+    for entry in &entries {
+        model.push(safe_item(entry));
+    }
+    *stored.borrow_mut() = entries;
+
+    Ok(())
+}
+
+/// Una ficha del disco tal como la pinta «Poner a salvo».
+fn safe_item(entry: &StoredFile) -> SafeItem {
+    SafeItem {
+        name: entry.name.clone().into(),
+        path: entry.origin.clone().into(),
+        r#where: folder_name(&entry.origin).into(),
+        r#when: local_when_text(entry.when).into(),
+        sha256: entry.sha256.clone().into(),
+    }
+}
+
+/// La carpeta de donde salió el archivo, en una palabra: «Descargas».
+fn folder_name(path: &str) -> String {
+    Path::new(path)
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "tu equipo".to_string())
+}
+
+/// Vuelve a leer los últimos análisis. Se llama al arrancar y al terminar uno.
+fn reload_history(window: &MainWindow) -> std::io::Result<()> {
+    let runs = match History::open().and_then(|history| history.recent(20)) {
+        Ok(runs) => {
+            window.set_history_problem("".into());
+            runs
+        }
+        Err(error) => {
+            window.set_history_problem(format!("No se pudo leer el historial: {error}").into());
+            return Err(error);
+        }
+    };
+    // El ModelRc se queda vivo hasta el final: el modelo prestado no puede
+    // sobrevivir al temporal de `window.get_history()`.
+    let model = window.get_history();
+    let Some(model) = model.as_any().downcast_ref::<VecModel<HistoryItem>>() else {
+        return Ok(());
+    };
+
+    model.clear();
+    for run in &runs {
+        model.push(history_item(run));
+    }
+
+    Ok(())
+}
+
+fn history_item(run: &ScanRun) -> HistoryItem {
+    HistoryItem {
+        when: local_when_text(run.when).into(),
+        scope: run.scope.clone().into(),
+        files: thousands(run.files).into(),
+        findings: run.findings as i32,
+    }
+}
+
+/// `DD-MM-YYYY HH:mm`, en la hora local. El disco guarda UTC.
+fn local_when_text(when: u64) -> String {
+    let Some(at) = Local.timestamp_opt(when as i64, 0).single() else {
+        return String::new();
+    };
+
+    at.format("%d-%m-%Y %H:%M").to_string()
+}
+
+/// Separador de millares con punto, como se lee en español: 18204 → 18.204.
+fn thousands(value: u64) -> String {
+    let digits = value.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            grouped.push('.');
+        }
+        grouped.push(digit);
+    }
+
+    grouped
+}
+
 /// La ruta que el usuario eligió antes, o un aviso si todavía no hay ninguna.
 fn chosen_path(window: &MainWindow, warning: &str) -> Option<PathBuf> {
     let path = PathBuf::from(window.get_file_path().to_string());
@@ -491,7 +685,7 @@ fn failed_text(failed: u64) -> String {
 
 /// Rellena en Inicio lo que dejó el último análisis apuntado en el historial.
 fn load_last_scan(window: &MainWindow) {
-    let last = rhino_core::History::open()
+    let last = History::open()
         .and_then(|history| history.recent(1))
         .ok()
         .and_then(|runs| runs.into_iter().next());
@@ -605,5 +799,29 @@ mod tests {
             ScanTarget::File(PathBuf::from("/tmp/setup.exe")).scope(),
             "Un archivo: setup.exe"
         );
+    }
+
+    #[test]
+    fn the_history_date_is_day_month_year_and_time() {
+        let at = at(2026, 3, 4, 9, 5);
+
+        assert_eq!(local_when_text(at.timestamp() as u64), "04-03-2026 09:05");
+    }
+
+    #[test]
+    fn file_counts_are_grouped_in_thousands() {
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(44), "44");
+        assert_eq!(thousands(312), "312");
+        assert_eq!(thousands(18_204), "18.204");
+    }
+
+    #[test]
+    fn an_apart_file_is_named_by_its_folder() {
+        assert_eq!(
+            folder_name("/home/ana/Descargas/instalador.exe"),
+            "Descargas"
+        );
+        assert_eq!(folder_name("instalador.exe"), "tu equipo");
     }
 }

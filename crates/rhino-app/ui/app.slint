@@ -13,8 +13,8 @@
 // ofrece una acción**. Un usuario poco técnico no debe tener que elegir dónde
 // mirar. Todo lo que no ayude a decidir se va a la pantalla que le toca.
 //
-// Los datos son de ejemplo y están rotulados como tales: la maqueta no inventa
-// detecciones, autorías ni actualizaciones reales.
+// «Poner a salvo» e «Historial» leen del disco. Solo «Ajustes» sigue siendo
+// maqueta (`demo`), y la tira MAQUETA · ESTADO existe únicamente en desarrollo.
 
 // La tipografía va incrustada: la interfaz no depende de las fuentes del sistema, y
 // las de Windows no miden como las de Linux. Inter (SIL OFL 1.1) en los tres pesos que
@@ -36,6 +36,25 @@ export struct FindingItem {
     rule-id: string,
     rule-author: string,
     rule-source: string,
+}
+
+// Un archivo apartado, tal como lo ve «Poner a salvo». `where` es la carpeta de
+// donde salió («Descargas»), no la ruta entera.
+export struct SafeItem {
+    name: string,
+    path: string,
+    where: string,
+    when: string,         // DD-MM-YYYY HH:mm, en hora local
+    sha256: string,
+}
+
+// Un análisis terminado, tal como lo ve «Historial». `files` llega ya con el
+// separador de millares puesto.
+export struct HistoryItem {
+    when: string,         // DD-MM-YYYY HH:mm, en hora local
+    scope: string,
+    files: string,
+    findings: int,
 }
 
 // ── Piezas ────────────────────────────────────────────────────────────────────
@@ -474,7 +493,7 @@ component FindingRow inherits Rectangle {
 // Un archivo apartado.
 component SafeRow inherits Rectangle {
     in property <string> name;
-    in property <string> origin;
+    in property <string> where;
     in property <string> when;
     callback restore;
     callback erase;
@@ -498,7 +517,7 @@ component SafeRow inherits Rectangle {
             alignment: center;
 
             Text { text: root.name; font-size: Theme.t-md; color: Theme.ink; overflow: elide; }
-            Text { text: root.origin + " · apartado el " + root.when; font-size: Theme.t-xs; color: Theme.ink-muted; overflow: elide; }
+            Text { text: root.where + " · apartado el " + root.when; font-size: Theme.t-xs; color: Theme.ink-muted; overflow: elide; }
         }
 
         Mid {
@@ -843,26 +862,48 @@ component ResultsScreen inherits Rectangle {
 
 // Poner a salvo: lo apartado, y nada más.
 component SafeScreen inherits Rectangle {
-    in property <int> demo;
-    in property <string> count;
+    in property <[SafeItem]> items;
+    in property <string> problem: "";
     callback go(int);
+    callback restore(int);
+    callback erase(int);
 
     VerticalLayout {
         padding: 28px;
         spacing: 12px;
 
-        if root.demo == 1 : VerticalLayout {
-            spacing: 10px;
+        // La lista puede crecer: la ventana mide 680 px fijos y lo apartado no
+        // tiene tope, así que se desplaza como la de hallazgos.
+        // El envoltorio se queda el sobrante y el Flickable lo llena: un Flickable
+        // suelto en el layout mide lo que mide su contenido y no se desplaza.
+        if root.items.length > 0 : Rectangle {
             vertical-stretch: 1;
 
-            SafeRow { name: "instalador.exe"; origin: "Descargas"; when: "hoy a las 21:14"; }
-            SafeRow { name: "crack_v3.zip"; origin: "Escritorio"; when: "hoy a las 21:14"; }
-            SafeRow { name: "toolbar_setup.exe"; origin: "Descargas"; when: "el lunes a las 19:52"; }
+            scroll := Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-width: self.width;
+                content-height: rows.preferred-height;
+                interactive: true;
+
+                rows := VerticalLayout {
+                    width: scroll.width;
+                    spacing: 10px;
+
+                    for item[index] in root.items : SafeRow {
+                        name: item.name;
+                        where: item.where;
+                        when: item.when;
+                        restore => { root.restore(index); }
+                        erase => { root.erase(index); }
+                    }
+                }
+            }
         }
 
         // El envoltorio se queda el sobrante: si no, la tarjeta lo comparte con el
         // pie y crece hasta llenar la pantalla para decir dos lineas.
-        if root.demo != 1 : VerticalLayout {
+        if root.items.length == 0 : VerticalLayout {
             vertical-stretch: 1;
             alignment: center;
 
@@ -881,7 +922,9 @@ component SafeScreen inherits Rectangle {
                     }
 
                     Text {
-                        text: "No hay nada apartado";
+                        text: root.problem == ""
+                            ? "No hay nada apartado"
+                            : "No se pudo leer lo que está apartado";
                         font-size: Theme.t-xl;
                         font-weight: 600;
                         color: Theme.ink;
@@ -889,9 +932,9 @@ component SafeScreen inherits Rectangle {
                     }
 
                     Text {
-                        text: root.demo == 3
-                            ? "Todavía no hay protección instalada, así que tampoco hay nada que apartar."
-                            : "Lo que resulte sospechoso aparecerá aquí, y podrás recuperarlo cuando quieras.";
+                        text: root.problem == ""
+                            ? "Lo que resulte sospechoso aparecerá aquí, y podrás recuperarlo cuando quieras."
+                            : root.problem;
                         font-size: Theme.t-md;
                         color: Theme.ink-muted;
                         horizontal-alignment: center;
@@ -902,9 +945,11 @@ component SafeScreen inherits Rectangle {
         }
 
         Text {
-            text: root.demo == 1
-                ? root.count + " archivos apartados. Nada se borra hasta que tú lo decidas."
-                : "Apartar un archivo no lo borra: lo guarda Rhino para que no pueda hacer nada.";
+            text: root.items.length == 0
+                ? "Apartar un archivo no lo borra: lo guarda Rhino para que no pueda hacer nada."
+                : (root.items.length == 1
+                    ? "1 archivo apartado. Nada se borra hasta que tú lo decidas."
+                    : root.items.length + " archivos apartados. Nada se borra hasta que tú lo decidas.");
             font-size: Theme.t-sm;
             color: Theme.ink-muted;
             wrap: word-wrap;
@@ -914,96 +959,165 @@ component SafeScreen inherits Rectangle {
 
 // Historial: la tabla, sin adornos alrededor.
 component HistoryScreen inherits Rectangle {
-    in property <int> demo;
+    in property <[HistoryItem]> items;
+    in property <string> problem: "";
 
     VerticalLayout {
         padding: 28px;
         spacing: 0px;
 
-        HorizontalLayout {
+        if root.items.length > 0 : HorizontalLayout {
             height: 32px;
             padding-left: 12px;
             padding-right: 12px;
             spacing: 12px;
 
             Text { text: "Cuándo"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 140px; vertical-alignment: center; }
-            Text { text: "Qué se analizó"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 190px; vertical-alignment: center; }
+            Text { text: "Qué se analizó"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 230px; vertical-alignment: center; }
             Text { text: "Archivos"; font-size: Theme.t-sm; color: Theme.ink-muted; width: 72px; vertical-alignment: center; }
             Text { text: "Resultado"; font-size: Theme.t-sm; color: Theme.ink-muted; horizontal-stretch: 1; vertical-alignment: center; }
         }
 
-        Rule {}
+        if root.items.length > 0 : Rule {}
 
-        for h in [0, 1, 2, 3, 4] : Rectangle {
-            height: 46px;
+        // Veinte entradas no caben en 680 px: la tabla se desplaza y el encabezado
+        // se queda fijo arriba. El envoltorio se queda el sobrante y el Flickable
+        // lo llena: un Flickable suelto en el layout mide lo que mide su contenido.
+        if root.items.length > 0 : Rectangle {
+            vertical-stretch: 1;
 
-            Rectangle {
-                y: parent.height - 1px;
+            scroll := Flickable {
                 width: parent.width;
-                height: 1px;
-                background: Theme.rail-rule;
-            }
+                height: parent.height;
+                content-width: self.width;
+                content-height: rows.preferred-height;
+                interactive: true;
 
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 12px;
+                rows := VerticalLayout {
+                    width: scroll.width;
+                    spacing: 0px;
 
-                Text {
-                    text: h == 0 ? "Hoy, 21:14" : (h == 1 ? "Ayer, 20:02" : (h == 2 ? "Lunes, 19:40" : (h == 3 ? "Domingo, 12:05" : "Sábado, 11:20")));
-                    font-size: Theme.t-md;
-                    color: Theme.ink-soft;
-                    width: 140px;
-                    vertical-alignment: center;
-                }
+                    for item[index] in root.items : Rectangle {
+                        height: 46px;
 
-                Text {
-                    text: h == 0 || h == 2 || h == 4 ? "Todo el equipo" : "Tu carpeta de descargas";
-                    font-size: Theme.t-md;
-                    color: Theme.ink-soft;
-                    width: 190px;
-                    vertical-alignment: center;
-                    overflow: elide;
-                }
-
-                Text {
-                    text: h == 0 ? "18.204" : (h == 1 ? "312" : (h == 2 ? "17.980" : (h == 3 ? "44" : "18.011")));
-                    font-size: Theme.t-md;
-                    color: Theme.ink-muted;
-                    width: 72px;
-                    vertical-alignment: center;
-                }
-
-                HorizontalLayout {
-                    spacing: 10px;
-                    horizontal-stretch: 1;
-
-                    Mid {
                         Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: h == 0 && root.demo == 1 ? Theme.danger : Theme.ok;
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.rail-rule;
                         }
-                    }
 
-                    Text {
-                        text: h == 0 && root.demo == 1 ? "2 sospechosos" : "Nada sospechoso";
-                        font-size: Theme.t-md;
-                        color: Theme.ink-soft;
-                        horizontal-stretch: 1;
-                        vertical-alignment: center;
-                        overflow: elide;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 12px;
+
+                            Text {
+                                text: item.when;
+                                font-size: Theme.t-md;
+                                color: Theme.ink-soft;
+                                width: 140px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: item.scope;
+                                font-size: Theme.t-md;
+                                color: Theme.ink-soft;
+                                width: 230px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: item.files;
+                                font-size: Theme.t-md;
+                                color: Theme.ink-muted;
+                                width: 72px;
+                                vertical-alignment: center;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                horizontal-stretch: 1;
+
+                                Mid {
+                                    Rectangle {
+                                        width: 8px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        background: item.findings == 0 ? Theme.ok : Theme.danger;
+                                    }
+                                }
+
+                                Text {
+                                    text: item.findings == 0
+                                        ? "Nada sospechoso"
+                                        : (item.findings == 1 ? "1 sospechoso" : item.findings + " sospechosos");
+                                    font-size: Theme.t-md;
+                                    color: Theme.ink-soft;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        Text {
-            text: "Datos de ejemplo. El historial no sale de tu equipo.";
-            font-size: Theme.t-xs;
-            color: Theme.ink-muted;
+        // El mismo estado vacío que el de «Poner a salvo», envuelto para que el
+        // sobrante lo absorba el envoltorio y no la tarjeta (regla 17).
+        if root.items.length == 0 : VerticalLayout {
             vertical-stretch: 1;
+            alignment: center;
+
+            Rectangle {
+                background: Theme.card;
+                border-radius: Theme.r-md;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 12px;
+                    padding: 24px;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { glyph: Icons.clock; box: 34px; tint: Theme.ink-muted; }
+                    }
+
+                    Text {
+                        text: root.problem == ""
+                            ? "Todavía no has analizado nada"
+                            : "No se pudo leer el historial";
+                        font-size: Theme.t-xl;
+                        font-weight: 600;
+                        color: Theme.ink;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.problem == ""
+                            ? "Cuando termines un análisis, aparecerá aquí: qué se miró y qué se encontró."
+                            : root.problem;
+                        font-size: Theme.t-md;
+                        color: Theme.ink-muted;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding-top: 12px;
+
+            Text {
+                text: "El historial no sale de tu equipo.";
+                font-size: Theme.t-xs;
+                color: Theme.ink-muted;
+            }
         }
     }
 }
@@ -1121,6 +1235,10 @@ export component MainWindow inherits Window {
 
     in property <string> version;
     in property <[FindingItem]> findings;
+    in property <[SafeItem]> safe-items;
+    in property <string> safe-problem: "";    // por qué no se pudo leer lo apartado
+    in property <[HistoryItem]> history;
+    in property <string> history-problem: ""; // por qué no se pudo leer el historial
     in property <int> scanned: 0;             // archivos ya analizados
     in property <int> failed: 0;              // carpetas y archivos que no se pudieron leer
     in property <string> current-file: "";    // el que se está analizando ahora
@@ -1143,6 +1261,8 @@ export component MainWindow inherits Window {
     callback cancel-scan();
     callback quarantine(int);
     callback ignore(int);
+    callback restore(int);
+    callback erase(int);
 
     // El estado de Inicio sale de tres hechos del disco, en este orden: se está
     // analizando, falta la base de datos, y qué dejó la última revisión.
@@ -1192,7 +1312,6 @@ export component MainWindow inherits Window {
                 : (root.findings-reset || !root.has-scanned
                     ? "Analizar todo el equipo"
                     : "Analizar otra vez")));
-    property <string> safe-count: "3";
     property <string> results-headline: root.findings.length == 0
         ? "Ningún archivo sospechoso"
         : (root.findings.length == 1
@@ -1450,16 +1569,19 @@ export component MainWindow inherits Window {
                         visible: root.screen == 3;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
-                        count: root.safe-count;
+                        items: root.safe-items;
+                        problem: root.safe-problem;
                         go(x) => { root.screen = x; }
+                        restore(x) => { root.restore(x); }
+                        erase(x) => { root.erase(x); }
                     }
 
                     HistoryScreen {
                         visible: root.screen == 4;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
+                        items: root.history;
+                        problem: root.history-problem;
                     }
 
                     SettingsScreen {

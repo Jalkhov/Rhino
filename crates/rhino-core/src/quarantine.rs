@@ -134,7 +134,14 @@ impl Quarantine {
             when: time::now_unix(),
         };
 
+        // Nunca se pisa lo que ya está apartado: el mismo contenido en dos sitios
+        // tiene el mismo sha256, y en Linux `rename` borraría la copia anterior sin
+        // avisar. Se deja el archivo donde está y se dice que ya hay uno igual.
         let payload = self.payload_path(sha256);
+        if payload.exists() || self.entry_path(sha256).exists() {
+            return Err(QuarantineError::Occupied(entry.origin));
+        }
+
         move_file(origin, &payload)?;
 
         if let Err(error) = self.write_entry(&entry) {
@@ -289,6 +296,41 @@ mod tests {
         // El contenido se guarda sin extensión: Windows no lo ejecuta por costumbre.
         let payload = quarantine.directory().join(format!("{}.bin", entry.sha256));
         assert_eq!(fs::read(&payload).expect("leer lo apartado"), data);
+
+        let _ = fs::remove_dir_all(place);
+    }
+
+    #[test]
+    fn the_same_file_cannot_be_stored_twice() {
+        let place = temp_directory("repetido");
+        let quarantine = Quarantine::at(place.join("apartados"));
+        let data = b"el mismo contenido en dos carpetas";
+        let sha256 = sha256_hex(data);
+
+        let first = place.join("primero.exe");
+        fs::write(&first, data).expect("escribir el primero");
+        let entry = quarantine.store(&first, &sha256).expect("apartar el primero");
+        let payload = quarantine.directory().join(format!("{}.bin", entry.sha256));
+
+        let second = place.join("segundo.exe");
+        fs::write(&second, data).expect("escribir el segundo");
+
+        match quarantine.store(&second, &sha256) {
+            Err(QuarantineError::Occupied(_)) => {}
+            other => panic!("se esperaba Occupied y llegó {other:?}"),
+        }
+
+        assert_eq!(
+            fs::read(&payload).expect("la primera copia sigue"),
+            data,
+            "la copia anterior no se sobrescribe"
+        );
+        assert!(second.exists(), "el segundo no se mueve de su sitio");
+        assert_eq!(
+            quarantine.list().expect("listar")[0].origin,
+            first.to_string_lossy(),
+            "la ficha sigue siendo la del primero"
+        );
 
         let _ = fs::remove_dir_all(place);
     }
