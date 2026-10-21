@@ -53,6 +53,11 @@ component Icon {
         height: root.box;
         horizontal-alignment: center;
         vertical-alignment: center;
+
+        // El glifo es decoración: quien lo usa pone el nombre del control. Sin esto,
+        // el árbol de accesibilidad se llena de "texto" sin nombre — nueve en la
+        // pantalla de Inicio, medidos con el volcado de `vm/uia.ps1`.
+        accessible-role: none;
     }
 }
 

@@ -1,0 +1,24 @@
+ventana: 'Rhino'
+papel= 'ControlType.Window' clase= 'Window Class'
+
+ControlType.Window "Rhino" enabled=True offscreen=False
+  ControlType.Text "Rhino" enabled=True offscreen=False
+  ControlType.TabItem "Inicio" enabled=True offscreen=False
+    ControlType.Text "Inicio" enabled=True offscreen=False
+  ControlType.TabItem "Analizar" enabled=True offscreen=False
+    ControlType.Text "Analizar" enabled=True offscreen=False
+  ControlType.TabItem "Archivos sospechosos" enabled=True offscreen=False
+    ControlType.Text "Archivos sospechosos" enabled=True offscreen=False
+  ControlType.TabItem "Poner a salvo" enabled=True offscreen=False
+    ControlType.Text "Poner a salvo" enabled=True offscreen=False
+  ControlType.TabItem "Historial" enabled=True offscreen=False
+    ControlType.Text "Historial" enabled=True offscreen=False
+  ControlType.TabItem "Ajustes" enabled=True offscreen=False
+    ControlType.Text "Ajustes" enabled=True offscreen=False
+  ControlType.Text "Inicio" enabled=True offscreen=False
+  ControlType.Text "Listo" enabled=True offscreen=False
+  ControlType.Text "Todavía no has mirado nada" enabled=True offscreen=False
+  ControlType.Text "Un análisis completo tarda unos minutos y puedes seguir usando el equipo." enabled=True offscreen=False
+  ControlType.Button "Analizar todo el equipo" enabled=True offscreen=False
+    ControlType.Text "Analizar todo el equipo" enabled=True offscreen=False
+  ControlType.Text "Protección <versión> instalada" enabled=True offscreen=False

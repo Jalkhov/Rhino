@@ -348,6 +348,11 @@ núcleo, 6 de propiedades, 5 de integración y 1 del manifiesto del paquete.
   de color contra AA (4,5:1 para texto, 3:1 para marcas finas) y falla si un botón usa el
   color de hallazgo. El layout no se prueba automáticamente: se mide sobre capturas, con la
   receta de `AGENTS.md`.
+- **Accesibilidad:** `vm/uia.ps1` vuelca en el invitado el árbol de UI Automation de la
+  ventana, una línea por control con su papel, su nombre y su estado. Es texto, así que se
+  compara con `diff` contra los volcados aprobados de `vm/uia/`; el método, en
+  `vm/README.md`. Lo que no prueba es el orden del teclado ni el aro de foco: eso se recorre
+  con Tab y Enter de verdad.
 
 ## Estado
 
