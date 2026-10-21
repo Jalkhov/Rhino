@@ -4,8 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/jalkhov/Documentos/Dev/Rhino/web/public
-ExecStart=/usr/bin/python3 -m http.server 27182 --bind 127.0.0.1 --directory /home/jalkhov/Documentos/Dev/Rhino/web/public
+# %h es el directorio del usuario que instala la unidad; si el repositorio no
+# vive en ~/Documentos/Dev/Rhino, cambia las dos rutas.
+WorkingDirectory=%h/Documentos/Dev/Rhino/web/public
+ExecStart=/usr/bin/python3 -m http.server 27182 --bind 127.0.0.1 --directory %h/Documentos/Dev/Rhino/web/public
 Restart=on-failure
 RestartSec=2
 

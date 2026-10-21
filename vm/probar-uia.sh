@@ -3,8 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-VM=MiniOS10
-SHARED=/home/jalkhov/Descargas/VBOX10
+# La contraseña no se versiona: `export VM_PASS=...` antes de ejecutar.
+: "${VM_PASS:?exporta VM_PASS con la contraseña de la cuenta del invitado}"
+
+VM=${VM:-MiniOS10}
+VM_USER=${VM_USER:-root}
+SHARED=${SHARED:-$HOME/Descargas/VBOX10}
 GOLDEN=vm/uia/inicio.txt
 TEMPORAL=$(mktemp)
 trap 'rm -f "$TEMPORAL"' EXIT
@@ -14,7 +18,7 @@ if ! VBoxManage showvminfo "$VM" --machinereadable | grep -q '^VMState="running"
 fi
 
 for _ in $(seq 1 30); do
-    if timeout 8 VBoxManage guestcontrol "$VM" run --username root --password 1234 \
+    if timeout 8 VBoxManage guestcontrol "$VM" run --username "$VM_USER" --password "$VM_PASS" \
         --wait-stdout -- cmd.exe /c "echo listo" >/dev/null 2>&1; then
         break
     fi
@@ -23,7 +27,7 @@ done
 
 # Espera al escritorio, no solo a que Guest Additions responda.
 for _ in $(seq 1 40); do
-    if timeout 8 VBoxManage guestcontrol "$VM" run --username root --password 1234 \
+    if timeout 8 VBoxManage guestcontrol "$VM" run --username "$VM_USER" --password "$VM_PASS" \
         --wait-stdout -- 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' \
         -NoProfile -Command "if (Get-Process explorer -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
         >/dev/null 2>&1; then
@@ -40,14 +44,14 @@ set RHINO_DB_URL=http://10.0.2.2:27182/db/stable
 start "" "Z:\rhino-app-x86.exe"
 BAT
 
-timeout 30 VBoxManage guestcontrol "$VM" run --username root --password 1234 \
+timeout 30 VBoxManage guestcontrol "$VM" run --username "$VM_USER" --password "$VM_PASS" \
     --wait-stdout -- cmd.exe /c "taskkill /IM rhino-app-x86.exe /F" >/dev/null 2>&1 || true
 
-timeout 30 VBoxManage guestcontrol "$VM" start --username root --password 1234 \
+timeout 30 VBoxManage guestcontrol "$VM" start --username "$VM_USER" --password "$VM_PASS" \
     --exe 'Z:\lanzar.bat' >/dev/null
 sleep 12
 
-timeout 60 VBoxManage guestcontrol "$VM" run --username root --password 1234 \
+timeout 60 VBoxManage guestcontrol "$VM" run --username "$VM_USER" --password "$VM_PASS" \
     --wait-stdout -- 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' \
     -NoProfile -ExecutionPolicy Bypass -File 'Z:\uia.ps1' >/dev/null
 
@@ -68,5 +72,5 @@ PY
 diff -u "$GOLDEN" "$TEMPORAL"
 echo "UIA OK: $GOLDEN"
 
-timeout 30 VBoxManage guestcontrol "$VM" run --username root --password 1234 \
+timeout 30 VBoxManage guestcontrol "$VM" run --username "$VM_USER" --password "$VM_PASS" \
     --wait-stdout -- cmd.exe /c "taskkill /IM rhino-app-x86.exe /F" >/dev/null 2>&1 || true

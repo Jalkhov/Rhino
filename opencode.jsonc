@@ -20,6 +20,7 @@
       "rea": {
         "type": "local",
         "command": [
+          // Rutas de esta maquina; ajustalas a la tuya.
           "/home/jalkhov/.nvm/versions/node/v24.18.0/bin/rea",
           "mcp"
         ],
