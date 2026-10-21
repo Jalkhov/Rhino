@@ -213,19 +213,21 @@ máquina virtual es de 64 bits):
 
 | Dato | Medido |
 | --- | --- |
-| RAM durante el análisis | ~1,32 GB (33 % de 4000 MB) |
-| CPU | 100 % de una CPU |
-| Archivos por segundo | 9,3 (5780 → 5965 archivos en 20 s) |
+| Memoria de trabajo de Rhino durante el análisis | **53 MB** (55.554.048 bytes), estable |
+| Memoria de la máquina virtual entera (Windows + Rhino) | 33 % de 4000 MB |
+| Archivos por segundo | 9,3 en `C:\Program Files` (5965 archivos); 1,2 en la raíz de `C:` |
 | Archivos que no se pudieron leer | 2 de 5965, contados y enseñados |
 | Escala del sistema | respetada: al 125 % la ventana mide 1222 px físicos |
 
 La protección se descargó e instaló desde el sitio sin reiniciar la aplicación, y el
 teclado (Tab, Shift+Tab e Intro con el foco visible) funciona en el invitado.
 
-Los 9,3 archivos/s son la cifra que decide la fase 6: con un solo hilo, un análisis
-completo del equipo (cientos de miles de archivos) tarda horas. La máquina virtual es el
-peor escenario posible (una CPU, disco virtual), así que un equipo real de cuatro núcleos
-irá mejor, pero no lo suficiente sin repartir el trabajo.
+Los archivos por segundo dependen del tamaño, no del número: la pasada sobre
+`C:\Program Files` iba a 9,3 archivos por segundo, y otra que empezó por la raíz de `C:` y
+se topó con lo borrado de la Papelera de reciclaje bajó a 1,2. El coste lo pone el
+contenido (el hash y las reglas lo leen), así que cuatro archivos de varios gigabytes
+tardan más que diez mil ejecutables pequeños. De ahí que la fase 6 tenga dos palancas:
+repartir entre hilos y saltarse lo que no puede ejecutarse.
 
 Falsos positivos en esa pasada: **4 de 5965** archivos. El primero, `WallaceSrc.exe` de las
 prácticas de Ghidra, lo marcaba la heurística por la sección `.textbss`, que crea el

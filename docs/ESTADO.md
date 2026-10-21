@@ -44,9 +44,11 @@ ignorados persistentes).
 
 - **Ya se ha ejecutado en Windows** (fase 5e): la ventana abre, el teclado funciona y la
   protección se descarga e instala. Las cifras están en el README.
-- **El análisis es lento**: 9,3 archivos por segundo en una máquina virtual de una CPU, con
-  la CPU al 100 %. Un análisis completo del equipo tarda horas; la fase 6 ya no es una
-  hipótesis.
+- **El análisis es lento**: 9,3 archivos por segundo en `C:\Program Files` y 1,2 en la raíz
+  de `C:` (donde la Papelera guarda archivos enormes). El coste lo pone el contenido, no el
+  número de archivos: un análisis completo del equipo tarda horas y la fase 6 ya no es una
+  hipótesis. El proceso ocupa **53 MB** durante el análisis; los 1,32 GB que se midieron
+  antes eran de la máquina virtual entera, Windows incluido.
 - **Falsos positivos sin terminar de medir**: en 5965 archivos de `C:\Program Files` marcó
   4. Uno era la sección `.textbss` del enlazador (corregido); los otros tres están sin
   revisar.
