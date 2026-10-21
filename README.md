@@ -315,8 +315,11 @@ El reemplazo es por directorio completo, nunca archivo a archivo. El paquete nue
 intercambia con el instalado, que queda como `rhino-db.anterior` y se borra. Si el intercambio
 falla a mitad, el paquete viejo vuelve a su sitio. Nunca existe un estado intermedio.
 
-La URL base se configura con la variable de entorno `RHINO_DB_URL` (`update::configured_url()`)
-porque todavía no hay servidor público: el sitio que aloja los paquetes vive en `web/`.
+La URL base vive compilada en `update::DEFAULT_URL`
+(`https://github.com/Jalkhov/Rhino/releases/download/db-latest`): una etiqueta fija que se
+sobrescribe cada semana con el paquete del día. No se usa `latest` porque apunta a la release
+más nueva de todas, y el programa también publica. `RHINO_DB_URL` la anula, que es lo que
+sirve para probar contra el sitio local de `web/`.
 
 ### Robustez
 

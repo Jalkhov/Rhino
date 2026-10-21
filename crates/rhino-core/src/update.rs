@@ -27,6 +27,14 @@ use crate::db::{
 /// Variable de entorno con la URL base del canal.
 pub const URL_ENV: &str = "RHINO_DB_URL";
 
+/// De dónde se descarga la protección cuando no hay nada configurado.
+///
+/// Es una etiqueta fija y no `latest` a propósito: `latest` apunta a la release
+/// más nueva de todas y el programa también publica, así que en cuanto saliera
+/// una versión del ejecutable la descarga de la base se iría a un 404.
+/// `db-latest` se sobrescribe cada semana con el paquete del día.
+pub const DEFAULT_URL: &str = "https://github.com/Jalkhov/Rhino/releases/download/db-latest";
+
 /// Tiempo máximo para la descarga completa.
 const TIMEOUT: Duration = Duration::from_secs(600);
 

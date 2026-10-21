@@ -67,19 +67,15 @@ fn benign_file_has_no_findings() {
 }
 
 #[test]
-fn flags_a_packed_executable_written_to_disk() {
+fn a_packed_executable_written_to_disk_is_not_suspicious_by_itself() {
+    // Estar empaquetado no dice nada: AIDA64, GPU-Z y el propio Detect It Easy
+    // llevan UPX. Se sigue leyendo el archivo entero, pero no se marca.
     let path = write_temp("empaquetado.exe", &packed_pe());
 
     let report = scan_file(&path, &Database::empty()).expect("el escaneo falló");
 
-    assert_eq!(report.verdict, Verdict::Suspicious);
-    assert!(!report.findings.is_empty());
-    assert!(
-        report
-            .findings
-            .iter()
-            .all(|finding| finding.layer == Layer::Heuristic)
-    );
+    assert_eq!(report.verdict, Verdict::Clean);
+    assert!(report.findings.is_empty());
 
     fs::remove_file(&path).ok();
 }

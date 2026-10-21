@@ -907,18 +907,19 @@ fn should_list(ignored: &HashSet<String>, has_findings: bool, sha256: &str) -> b
 
 /// La URL del canal: la configurada manda; si no hay, en desarrollo se usa el
 /// sitio local de `web/serve.sh`. En release no se inventa un servidor.
-fn update_base(configured: Option<String>, debug: bool) -> Result<String, String> {
+fn update_base(configured: Option<String>, debug: bool) -> String {
     if let Some(url) = configured {
-        return Ok(url);
+        return url;
     }
 
     if debug {
         // El sitio de desarrollo sirve el canal estable en este puerto. Solo en
         // depuración: una compilación de release no debe hablar con localhost.
-        return Ok("http://localhost:27182/db/stable".to_string());
+        return "http://localhost:27182/db/stable".to_string();
     }
 
-    Err("Esta versión de prueba no tiene servidor de actualizaciones configurado".to_string())
+    // Sin nada configurado, el servidor publicado con las releases.
+    rhino_core::update::DEFAULT_URL.to_string()
 }
 
 /// El motivo de un fallo, en palabras que se puedan leer en pantalla.
@@ -943,7 +944,7 @@ fn update_protection(shared: &ScanShared) -> Result<Option<String>, String> {
     let base = update_base(
         rhino_core::update::configured_url(),
         cfg!(debug_assertions),
-    )?;
+    );
     let directory = rhino_core::db::default_directory().ok_or_else(|| {
         "No se pudo actualizar la protección: este equipo no dice dónde guardarla.".to_string()
     })?;
@@ -1092,7 +1093,7 @@ mod tests {
     #[test]
     fn a_configured_server_wins() {
         assert_eq!(
-            update_base(Some("https://ejemplo.test/db".into()), false).unwrap(),
+            update_base(Some("https://ejemplo.test/db".into()), false),
             "https://ejemplo.test/db"
         );
     }
@@ -1100,16 +1101,16 @@ mod tests {
     #[test]
     fn development_falls_back_to_the_local_site() {
         assert_eq!(
-            update_base(None, true).unwrap(),
+            update_base(None, true),
             "http://localhost:27182/db/stable"
         );
     }
 
     #[test]
-    fn a_release_without_a_server_says_so() {
+    fn a_release_without_anything_configured_uses_the_published_server() {
         assert_eq!(
-            update_base(None, false).unwrap_err(),
-            "Esta versión de prueba no tiene servidor de actualizaciones configurado"
+            update_base(None, false),
+            rhino_core::update::DEFAULT_URL
         );
     }
 
