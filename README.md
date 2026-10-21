@@ -2,6 +2,10 @@
 
 Antivirus ligero, rápido y de bajo consumo para Windows, con interfaz intuitiva y gratuito.
 
+Funciona en Windows 10 y 11, de 32 y 64 bits. El **mínimo exigido es Windows 10 de 32 bits
+con 4 GB de RAM**, que es el equipo al que apunta el diseño; no es un límite de
+compatibilidad. Se compila para las dos arquitecturas.
+
 ## Principio rector
 
 La eficiencia es la característica principal, no una optimización posterior. Rhino debe
