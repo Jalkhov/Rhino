@@ -478,6 +478,15 @@ Al abrirlo, la tarjeta de Inicio pide actualizar la protección: eso descarga el
 firmado desde la release `db-latest` y lo verifica antes de instalarlo. Después, «Analizar
 todo el equipo».
 
+## Desinstalar
+
+Son dos pasos, porque Rhino es un `.exe` suelto y no tiene instalador:
+
+1. En **Ajustes**, baja hasta **Quitar Rhino** y pulsa el botón. Borra la protección
+   instalada, el historial, lo que hayas ignorado y los archivos apartados; después la
+   ventana se cierra.
+2. Borra el `.exe` que descargaste.
+
 ## Compilación cruzada
 
 Desde Ubuntu, con `cargo-xwin` (target MSVC de Microsoft, que Rust mantiene en Tier 1

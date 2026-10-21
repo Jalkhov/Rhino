@@ -8,7 +8,7 @@ pub mod db;
 mod hash;
 pub mod history;
 pub mod ignores;
-mod paths;
+pub mod paths;
 mod pe;
 pub mod quarantine;
 pub mod rules;

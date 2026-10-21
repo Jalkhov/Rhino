@@ -429,7 +429,32 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
+    let weak_window = window.as_weak();
+    window.on_remove_all(move || match rhino_core::paths::remove_user_data() {
+        Ok(_) => {
+            // `quit_event_loop` hace que `window.run()` devuelva y el proceso
+            // termine solo, sin matarlo a la fuerza.
+            let _ = slint::quit_event_loop();
+        }
+        Err(error) => {
+            if let Some(window) = weak_window.upgrade() {
+                window.set_update_status(removal_message(&error).into());
+            }
+        }
+    });
+
     window.run()
+}
+
+/// El error del sistema trae códigos («os error 5»); en pantalla sobra eso.
+fn removal_message(error: &std::io::Error) -> String {
+    let reason = match error.kind() {
+        std::io::ErrorKind::PermissionDenied => "el sistema no deja borrar sus archivos",
+        std::io::ErrorKind::NotFound => "no se encontró la carpeta de Rhino",
+        _ => "algún archivo no se pudo borrar",
+    };
+
+    format!("No se pudo quitar Rhino: {reason}. Ciérralo y borra su carpeta a mano.")
 }
 
 /// Arranca un análisis: limpia lo anterior y lanza el recorrido fuera del hilo de
@@ -693,6 +718,7 @@ fn reload_safe(
     for entry in &entries {
         model.push(safe_item(entry));
     }
+    window.set_apartados(entries.len() as i32);
     *stored.borrow_mut() = entries;
 
     Ok(())

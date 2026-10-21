@@ -1313,18 +1313,32 @@ component SettingsScreen inherits Rectangle {
     in property <[IgnoredItem]> ignored;
     in property <string> ignored-problem: "";
     in property <string> core-status;
+    in property <int> apartados: 0;            // archivos apartados que se borrarían
     callback update-protection;
     callback stop-ignoring(int);
+    callback remove-all;
+
+    property <bool> confirming-removal: false;
 
     property <bool> installed: root.protection-version != "";
 
-    VerticalLayout {
-        // alignment: start para que los tres paneles tomen su alto natural: sin
-        // esto el sobrante de la pantalla se reparte entre ellos y el hueco
-        // interior de cada tarjeta crece.
-        alignment: start;
-        padding: 28px;
-        spacing: 14px;
+    // Con los cuatro paneles la pantalla ya no cabe en 624 px: el sobrante se
+    // sale por abajo, así que se desplaza como la lista de ignorados.
+    settings-scroll := Flickable {
+        width: root.width;
+        height: root.height;
+        content-width: settings-scroll.width;
+        content-height: content.preferred-height;
+        interactive: true;
+
+        content := VerticalLayout {
+            // alignment: start para que los paneles tomen su alto natural: sin
+            // esto el sobrante de la pantalla se reparte entre ellos y el hueco
+            // interior de cada tarjeta crece.
+            alignment: start;
+            padding: 28px;
+            spacing: 14px;
+            width: settings-scroll.width;
 
         Panel {
             title: "Protección";
@@ -1449,7 +1463,75 @@ component SettingsScreen inherits Rectangle {
                 wrap: word-wrap;
             }
         }
+
+        Panel {
+            title: "Quitar Rhino";
+
+            // Lo que se va a borrar sigue a la vista al confirmar: es lo único
+            // irreversible de la pantalla.
+            Text {
+                text: "Borra la protección instalada, el historial y los archivos apartados. El programa no se borra solo: después elimina el archivo que descargaste.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-soft;
+                wrap: word-wrap;
+            }
+
+            if root.apartados > 0 : Text {
+                text: root.apartados == 1
+                    ? "Se borrará 1 archivo apartado."
+                    : "Se borrarán " + root.apartados + " archivos apartados.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-muted;
+            }
+
+            if !root.confirming-removal : HorizontalLayout {
+                spacing: 12px;
+
+                Mid {
+                    AppButton {
+                        width: 160px;
+                        primary: true;
+                        label: "Quitar Rhino";
+                        clicked => { root.confirming-removal = true; }
+                    }
+                }
+            }
+
+            if root.confirming-removal : VerticalLayout {
+                spacing: 12px;
+
+                Text {
+                    text: "¿Seguro? Esto no se puede deshacer.";
+                    font-size: Theme.t-md;
+                    color: Theme.ink;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Mid {
+                        AppButton {
+                            width: 160px;
+                            primary: true;
+                            label: "Sí, quitarlo";
+                            clicked => { root.remove-all(); }
+                        }
+                    }
+
+                    Mid {
+                        AppButton {
+                            width: 160px;
+                            primary: false;
+                            label: "Cancelar";
+                            clicked => { root.confirming-removal = false; }
+                        }
+                    }
+                }
+            }
+        }
     }
+}
 }
 
 // ── Ventana ───────────────────────────────────────────────────────────────────
@@ -1491,6 +1573,7 @@ export component MainWindow inherits Window {
     in property <string> ignored-problem: "";
     in property <bool> updating-protection: false;
     in property <string> update-status: "";
+    in property <int> apartados: 0;            // archivos apartados que se borrarían
     in property <bool> show-demo: false;
     in-out property <string> file-path;
     in-out property <string> status: "Listo";
@@ -1510,6 +1593,7 @@ export component MainWindow inherits Window {
     callback erase(int);
     callback update-protection();
     callback stop-ignoring(int);
+    callback remove-all();
 
     // El estado de Inicio sale de tres hechos del disco, en este orden: se está
     // analizando, falta la base de datos, y qué dejó la última revisión.
@@ -1868,8 +1952,10 @@ export component MainWindow inherits Window {
                         ignored: root.ignored;
                         ignored-problem: root.ignored-problem;
                         core-status: root.core-status;
+                        apartados: root.apartados;
                         update-protection => { root.update-protection(); }
                         stop-ignoring(x) => { root.stop-ignoring(x); }
+                        remove-all => { root.remove-all(); }
                     }
                 }
             }
