@@ -888,7 +888,10 @@ component ResultsScreen inherits Rectangle {
         padding: 28px;
         spacing: 16px;
 
+        // Con hallazgos, el titular los cuenta. Sin ellos, el estado vacío ya lo
+        // dice dentro de la tarjeta: no se repite lo mismo dos veces.
         Text {
+            visible: root.findings.length > 0;
             text: root.headline;
             font-size: Theme.t-xl;
             font-weight: 600;
