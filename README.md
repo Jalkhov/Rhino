@@ -498,6 +498,17 @@ versionan**; se regeneran.
 Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atado a
 `localhost`. El detalle está en `web/README.md`.
 
+## Licencia
+
+Rhino se publica bajo la **GNU General Public License, versión 3** (ver `LICENSE`). Se eligió
+porque es la que encaja sin matices con Slint —que se usa bajo su opción GPLv3— y la que
+aceptan los programas de firma gratuita para proyectos de código abierto. Quien lo modifique
+y lo distribuya tiene que publicar sus cambios.
+
+Las piezas de terceros conservan su licencia: YARA-X (BSD-3-Clause), las reglas de YARA Forge
+(DRL 1.1, BSD y Apache 2.0, con la atribución de autor que se enseña en cada hallazgo), Inter
+(SIL OFL 1.1) y Lucide (ISC), con sus avisos en `crates/rhino-app/ui/fonts/`.
+
 ## Entorno de OpenCode
 
 `opencode.jsonc` declara los MCP útiles para el proyecto: `context-mode`,
