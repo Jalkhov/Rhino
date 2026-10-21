@@ -42,6 +42,18 @@ ignorados persistentes).
 
 ## Qué está roto o sin probar
 
+- **Ya se ha ejecutado en Windows** (fase 5e): la ventana abre, el teclado funciona y la
+  protección se descarga e instala. Las cifras están en el README.
+- **El análisis es lento**: 9,3 archivos por segundo en una máquina virtual de una CPU, con
+  la CPU al 100 %. Un análisis completo del equipo tarda horas; la fase 6 ya no es una
+  hipótesis.
+- **Falsos positivos sin terminar de medir**: en 5965 archivos de `C:\Program Files` marcó
+  4. Uno era la sección `.textbss` del enlazador (corregido); los otros tres están sin
+  revisar.
+- **El lector de pantalla no se ha probado**: el árbol de accesibilidad compila y existe,
+  pero aquí no hay sesión AT-SPI que lo lea.
+- **La ventana no cabe al 150 %**: 980x680 lógicos son 1470x1020 físicos y no entran en un
+  portátil de 1366x768.
 - **Inicio afirmaba «Tu equipo está protegido»** con la base de datos descargada y cero
   análisis (corregido en la fase 5a).
 - **La base de datos vivía junto al ejecutable**, donde un usuario estándar no puede
@@ -76,7 +88,8 @@ las filas del riel. El contraste lo comprueba `crates/rhino-app/tests/contraste.
 
 ## Siguiente rebanada
 
-Fase 5e: números en Windows (RAM, archivos por segundo, falsos positivos sobre programas
-instalados). Queda aparte la ventana a 150 %: pide una referencia de 900x480, recalcular
-riel, rellenos y columnas, y envolver Ajustes en un Flickable. El plan completo, con
-criterios de aceptación, está en `REPORT_1017.md`.
+Fase 6: repartir el análisis entre hilos y cortar por tipo de archivo. La medida de la fase
+5e (9,3 archivos por segundo con una CPU) la justifica con datos. Queda aparte la ventana a
+150 %: pide una referencia de 900x480, recalcular riel, rellenos y columnas y envolver
+Ajustes en un Flickable. El plan completo, con criterios de aceptación, está en
+`REPORT_1017.md`.
