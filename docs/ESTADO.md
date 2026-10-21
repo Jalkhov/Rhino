@@ -3,7 +3,8 @@
 Una página, escrita para que quien llegue nuevo (o una sesión nueva) sepa qué hay de
 verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
 
-Última actualización: 20-10-2026, tras la fase 5b («Poner a salvo» e «Historial» reales).
+Última actualización: 20-10-2026, tras la fase 5c («Ajustes» reales, descarga conectada e
+ignorados persistentes).
 
 ## Qué funciona de verdad
 
@@ -21,15 +22,23 @@ verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
   (`DD-MM-YYYY HH:mm`), alcance, archivos y resultado.
 - **Base de datos firmada.** Paquete con manifiesto y firma Ed25519, verificado al cargar;
   actualizador con descarga aparte y cambio por directorio completo.
+- **«Actualizar la protección».** El botón de Inicio y el de Ajustes descargan el canal,
+  comprueban la firma, cambian el paquete entero y recargan la protección en memoria sin
+  reiniciar: el siguiente análisis ya usa la versión nueva. En release, sin
+  `RHINO_DB_URL`, lo dice en pantalla en vez de inventar un servidor; en depuración cae en
+  el sitio local (`http://localhost:27182/db/stable`).
+- **«Ajustes» con datos del disco.** Versión instalada, número de comprobaciones y de
+  archivos peligrosos conocidos (del manifiesto cargado), estado de la descarga y lista de
+  archivos ignorados. Nada de cifras de ejemplo.
+- **«Ignorar» persistente.** `<datos>/Rhino/ignorados.json` guarda la huella SHA-256, no la
+  ruta. Un análisis nuevo no lista esos hallazgos; si el contenido cambia, vuelve a
+  aparecer. La misma lista se puede deshacer desde Ajustes.
 - **Privacidad.** Nada sale del equipo salvo la actualización de la base de datos.
 
 ## Qué es maqueta
 
-- **«Ajustes»** sigue enseñando datos de ejemplo (`demo` en `ui/app.slint`). La tira
-  «MAQUETA · ESTADO» solo aparece en compilaciones de desarrollo y ya solo cambia Ajustes;
-  «Poner a salvo» e «Historial» leen del disco.
-- **«Ignorar»** quita la fila de la lista, pero no se recuerda al cerrar la app.
-- **«Actualizar la protección»** no descarga: no está conectado al actualizador del núcleo.
+- La tira **«MAQUETA · ESTADO»** del riel solo aparece en compilaciones de desarrollo. Ya no
+  gobierna ninguna pantalla; se conserva como recordatorio de la fase 4.
 
 ## Qué está roto o sin probar
 
@@ -47,9 +56,13 @@ verdad y qué es decorado. Se actualiza en el mismo commit que el cambio.
 - **Sin teclado ni lector de pantalla.** Todo se maneja con ratón, no hay foco visible ni
   etiquetas `accessible-*`.
 - **Falsos positivos sin medir** sobre programas instalados de verdad.
-- **Los mensajes de estado no tienen línea visible.** «Recuperado en…», «Borrado» y los
-  errores van a `status`, pero ese texto solo se ve al final de Ajustes: falta un pie en las
-  pantallas que actúan (5d).
+- **Los mensajes de estado no tienen línea visible.** «Recuperado en…» y «Borrado» van a
+  `status`, que ya no se pinta en Ajustes (allí manda el estado de la protección). Los fallos
+  de «Ignorar» sí se ven en su panel. Falta un pie en las pantallas que actúan (5d).
+- **La descarga solo se ha probado en Linux, en depuración**, contra el sitio local con el
+  paquete estable de producción. No se ha ejercido en Windows, ni en release, ni con la
+  conexión cortada a mitad de los 9 MB (el núcleo descarta el paquete a medias; no se ha
+  visto en pantalla).
 
 ## Cómo se comprueba
 
@@ -63,6 +76,5 @@ las filas del riel. El contraste lo comprueba `crates/rhino-app/tests/contraste.
 
 ## Siguiente rebanada
 
-Fase 5c («Ajustes» reales y «Actualizar» conectado), 5d (teclado, foco, pie de estado y
-ventana que quepa a 150 %). El plan completo, con criterios de aceptación, está en
-`REPORT_1017.md`.
+Fase 5d (teclado, foco, pie de estado y ventana que quepa a 150 %) y 5e (Windows de
+verdad). El plan completo, con criterios de aceptación, está en `REPORT_1017.md`.

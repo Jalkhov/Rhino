@@ -1,16 +1,18 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Local, TimeZone};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
 use rhino_core::{
-    Database, History, Quarantine, QuarantineError, ScanReport, ScanRun, StoredFile, Verdict,
+    Database, History, Ignored, IgnoredFile, Quarantine, QuarantineError, ScanReport, ScanRun,
+    StoredFile, UpdateError, Verdict,
 };
 
 slint::include_modules!();
@@ -56,7 +58,11 @@ struct RowTarget {
 /// Lo que comparten el hilo del análisis y los botones de la ventana.
 #[derive(Clone)]
 struct ScanShared {
-    database: Arc<Database>,
+    /// El paquete que usan los análisis. La capa de fuera permite recargarlo
+    /// cuando se instala una actualización; cada análisis se lleva su `Arc` al
+    /// empezar, así la revisión en curso termina con el paquete con el que empezó
+    /// y la siguiente usa el nuevo sin reiniciar.
+    database: Arc<RwLock<Arc<Database>>>,
     /// La levanta «Detener»; el recorrido la mira entre archivo y archivo.
     stop: Arc<AtomicBool>,
     scanned: Arc<AtomicUsize>,
@@ -64,13 +70,32 @@ struct ScanShared {
     rows: Arc<Mutex<Vec<RowTarget>>>,
 }
 
+impl ScanShared {
+    /// Copia del paquete para un análisis. Se toma el candado un instante, no
+    /// durante el recorrido entero.
+    fn snapshot(&self) -> Arc<Database> {
+        let guard = self
+            .database
+            .read()
+            .unwrap_or_else(|poison| poison.into_inner());
+        Arc::clone(&guard)
+    }
+
+    fn replace(&self, database: Database) {
+        let mut guard = self
+            .database
+            .write()
+            .unwrap_or_else(|poison| poison.into_inner());
+        *guard = Arc::new(database);
+    }
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let window = MainWindow::new()?;
     window.set_version(rhino_core::VERSION.into());
 
-    let database = Arc::new(load_database());
-    window.set_has_database(!database.is_empty());
-    window.set_status(status_for(database.version()).into());
+    let database = load_database();
+    apply_database_state(&window, &database);
     window.set_show_demo(cfg!(debug_assertions));
     load_last_scan(&window);
 
@@ -94,8 +119,14 @@ fn main() -> Result<(), slint::PlatformError> {
         window.set_status(format!("No se pudo leer el historial: {error}").into());
     }
 
+    let ignored_model = Rc::new(VecModel::<IgnoredItem>::default());
+    window.set_ignored(ModelRc::from(ignored_model.clone()));
+    if let Err(error) = reload_ignored(&window) {
+        window.set_status(format!("No se pudo leer la lista de ignorados: {error}").into());
+    }
+
     let shared = ScanShared {
-        database,
+        database: Arc::new(RwLock::new(Arc::new(database))),
         stop: Arc::new(AtomicBool::new(false)),
         scanned: Arc::new(AtomicUsize::new(0)),
         failed: Arc::new(AtomicUsize::new(0)),
@@ -243,11 +274,105 @@ fn main() -> Result<(), slint::PlatformError> {
         };
         let index = index as usize;
 
-        // shortcut: lo ignorado no se recuerda al cerrar el programa; la lista de
-        // exclusiones de verdad es otra rebanada.
-        remove_row(&rows, index);
-        remove_finding(&window, index);
-        window.set_status("Lo hemos ignorado esta vez.".into());
+        let target = rows.lock().ok().and_then(|rows| {
+            rows.get(index).map(|row| RowTarget {
+                path: row.path.clone(),
+                sha256: row.sha256.clone(),
+            })
+        });
+        let Some(target) = target else {
+            return;
+        };
+
+        // Se apunta por huella, no por ruta: si el archivo cambia, vuelve a
+        // revisarse. Si no se puede escribir, la fila se queda.
+        match Ignored::open().and_then(|list| {
+            list.add(
+                &target.path,
+                &target.sha256,
+                rhino_core::time::now_unix(),
+            )
+        }) {
+            Ok(_) => {
+                remove_row(&rows, index);
+                remove_finding(&window, index);
+                let _ = reload_ignored(&window);
+                window.set_status(
+                    format!(
+                        "{} no volverá a aparecer en las revisiones.",
+                        file_name(&target.path)
+                    )
+                    .into(),
+                );
+            }
+            Err(error) => {
+                // El aviso va al panel que se está mirando: la fila no se quita y
+                // hay que decir por qué. El estado general no se ve en esta pantalla.
+                let message = format!("No se pudo ignorar: {error}. La fila sigue ahí.");
+                window.set_ignored_problem(message.clone().into());
+                window.set_status(message.into());
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    window.on_stop_ignoring(move |index| {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        let Some(item) = window.get_ignored().row_data(index as usize) else {
+            return;
+        };
+        let name = item.name.to_string();
+
+        match Ignored::open().and_then(|list| list.remove(item.sha256.as_str())) {
+            Ok(_) => {
+                let _ = reload_ignored(&window);
+                window.set_status(format!("{name} vuelve a revisarse.").into());
+            }
+            Err(error) => {
+                let message = format!("No se pudo quitar de la lista: {error}");
+                window.set_ignored_problem(message.clone().into());
+                window.set_status(message.into());
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let shared_on_update = shared.clone();
+    window.on_update_protection(move || {
+        let Some(window) = weak_window.upgrade() else {
+            return;
+        };
+        if window.get_updating_protection() {
+            return;
+        }
+        window.set_updating_protection(true);
+        window.set_update_status("Actualizando la protección…".into());
+
+        let weak_window = window.as_weak();
+        let shared = shared_on_update.clone();
+        std::thread::spawn(move || {
+            let outcome = update_protection(&shared);
+            let _ = weak_window.upgrade_in_event_loop(move |window| {
+                window.set_updating_protection(false);
+                match outcome {
+                    Ok(Some(version)) => {
+                        apply_database_state(&window, &shared.snapshot());
+                        window.set_update_status(
+                            format!("Protección actualizada a la versión {version}.").into(),
+                        );
+                    }
+                    Ok(None) => {
+                        apply_database_state(&window, &shared.snapshot());
+                        window.set_update_status(
+                            "Ya tienes la protección más reciente.".into(),
+                        );
+                    }
+                    Err(message) => window.set_update_status(message.into()),
+                }
+            });
+        });
     });
 
     let weak_window = window.as_weak();
@@ -330,9 +455,11 @@ fn start_scan(
     window.set_scanning(true);
     window.set_status(target.message().into());
 
-    let has_database = !shared.database.is_empty();
+    // Copia del paquete para este recorrido: si mientras tanto se instala una
+    // actualización, esta revisión termina con la que empezó.
+    let database = shared.snapshot();
     let weak_window = window.as_weak();
-    std::thread::spawn(move || run_scan(&weak_window, &shared, &target, has_database));
+    std::thread::spawn(move || run_scan(&weak_window, &shared, &database, &target));
 }
 
 /// El recorrido completo, ya en su propio hilo: informa de cada archivo a la
@@ -340,17 +467,19 @@ fn start_scan(
 fn run_scan(
     weak_window: &slint::Weak<MainWindow>,
     shared: &ScanShared,
+    database: &Database,
     target: &ScanTarget,
-    has_database: bool,
 ) {
     let mut suspects = 0usize;
     let mut stopped = false;
     let mut failed = 0u64;
     let failure;
+    let ignored = ignored_hashes();
 
     {
-        let mut on_report =
-            |report: ScanReport| report_to_ui(weak_window, shared, report, &mut suspects);
+        let mut on_report = |report: ScanReport| {
+            report_to_ui(weak_window, shared, &ignored, report, &mut suspects)
+        };
 
         // Los fallos se avisan en cuanto ocurren para que el recuento de la
         // pantalla no espere al final del recorrido.
@@ -364,11 +493,11 @@ fn run_scan(
 
         let outcome = match target {
             ScanTarget::File(path) => {
-                rhino_core::scan_file(path, &shared.database).map(&mut on_report)
+                rhino_core::scan_file(path, database).map(&mut on_report)
             }
             ScanTarget::Folder(root) => rhino_core::scan_dir_cancellable_with_failure(
                 root,
-                &shared.database,
+                database,
                 &shared.stop,
                 &mut on_report,
                 &mut on_failure,
@@ -379,7 +508,7 @@ fn run_scan(
             }),
             ScanTarget::WholeComputer => rhino_core::scan_dir_cancellable_with_failure(
                 system_drive(),
-                &shared.database,
+                database,
                 &shared.stop,
                 &mut on_report,
                 &mut on_failure,
@@ -398,7 +527,6 @@ fn run_scan(
     let scope = target.scope();
     let _ = weak_window.upgrade_in_event_loop(move |window| {
         window.set_scanning(false);
-        window.set_has_database(has_database);
         window.set_failed(failed as i32);
         window.set_status(
             match &failure {
@@ -444,12 +572,13 @@ fn run_scan(
 fn report_to_ui(
     weak_window: &slint::Weak<MainWindow>,
     shared: &ScanShared,
+    ignored: &HashSet<String>,
     report: ScanReport,
     suspects: &mut usize,
 ) {
     let count = shared.scanned.fetch_add(1, Ordering::Relaxed) + 1;
     let current = report.path.clone();
-    let finding = (!report.findings.is_empty()).then(|| {
+    let finding = should_list(ignored, !report.findings.is_empty(), &report.sha256).then(|| {
         *suspects += 1;
         (finding_item(&report), report.sha256.clone())
     });
@@ -726,6 +855,141 @@ fn system_drive() -> PathBuf {
     PathBuf::from(format!("{drive}{}", std::path::MAIN_SEPARATOR))
 }
 
+/// Vuelve a leer la lista de ignorados y la deja en la pantalla.
+fn reload_ignored(window: &MainWindow) -> std::io::Result<()> {
+    let entries = match Ignored::open().and_then(|list| list.list()) {
+        Ok(entries) => {
+            window.set_ignored_problem("".into());
+            entries
+        }
+        Err(error) => {
+            window.set_ignored_problem(
+                format!("No se pudo leer la lista de ignorados: {error}").into(),
+            );
+            return Err(error);
+        }
+    };
+
+    let model = window.get_ignored();
+    let Some(model) = model.as_any().downcast_ref::<VecModel<IgnoredItem>>() else {
+        return Ok(());
+    };
+    model.clear();
+    for entry in &entries {
+        model.push(ignored_item(entry));
+    }
+
+    Ok(())
+}
+
+fn ignored_item(entry: &IgnoredFile) -> IgnoredItem {
+    IgnoredItem {
+        name: file_name(&entry.path).into(),
+        path: entry.path.clone().into(),
+        when: local_when_text(entry.when).into(),
+        sha256: entry.sha256.clone().into(),
+    }
+}
+
+/// Huellas de lo que el usuario decidió ignorar, leídas una vez por revisión.
+fn ignored_hashes() -> HashSet<String> {
+    Ignored::open()
+        .and_then(|list| list.list())
+        .map(|entries| entries.into_iter().map(|entry| entry.sha256).collect())
+        .unwrap_or_default()
+}
+
+/// Un archivo solo entra en la lista si tiene hallazgos y su contenido no está
+/// ignorado. Se decide por la huella: si el archivo cambia, vuelve a aparecer.
+fn should_list(ignored: &HashSet<String>, has_findings: bool, sha256: &str) -> bool {
+    has_findings && !ignored.contains(sha256)
+}
+
+/// La URL del canal: la configurada manda; si no hay, en desarrollo se usa el
+/// sitio local de `web/serve.sh`. En release no se inventa un servidor.
+fn update_base(configured: Option<String>, debug: bool) -> Result<String, String> {
+    if let Some(url) = configured {
+        return Ok(url);
+    }
+
+    if debug {
+        // El sitio de desarrollo sirve el canal estable en este puerto. Solo en
+        // depuración: una compilación de release no debe hablar con localhost.
+        return Ok("http://localhost:27182/db/stable".to_string());
+    }
+
+    Err("Esta versión de prueba no tiene servidor de actualizaciones configurado".to_string())
+}
+
+/// El motivo de un fallo, en palabras que se puedan leer en pantalla.
+fn update_problem(error: &UpdateError) -> String {
+    match error {
+        UpdateError::Network(_) => {
+            "No se pudo actualizar la protección: no hay conexión con el servidor.".to_string()
+        }
+        UpdateError::Db(_) => {
+            "No se pudo actualizar la protección: lo descargado no es de Rhino o está dañado."
+                .to_string()
+        }
+        UpdateError::Io(_) => {
+            "No se pudo actualizar la protección: no se pudo guardar en el disco.".to_string()
+        }
+    }
+}
+
+/// Descarga, verifica e instala el paquete, y deja cargado en memoria el nuevo.
+/// Devuelve la versión instalada, o `None` si ya estaba al día.
+fn update_protection(shared: &ScanShared) -> Result<Option<String>, String> {
+    let base = update_base(
+        rhino_core::update::configured_url(),
+        cfg!(debug_assertions),
+    )?;
+    let directory = rhino_core::db::default_directory().ok_or_else(|| {
+        "No se pudo actualizar la protección: este equipo no dice dónde guardarla.".to_string()
+    })?;
+
+    let installed =
+        rhino_core::update::update(&base, &directory).map_err(|error| update_problem(&error))?;
+
+    // Al día y ya cargado: no hay nada que releer. Abrir el paquete cuesta
+    // segundos en una compilación de depuración y no cambiaría nada.
+    if installed.is_none() && !shared.snapshot().is_empty() {
+        return Ok(None);
+    }
+
+    // Tras instalar (o si la memoria estaba vacía) se relee: así lo que hay en
+    // memoria es exactamente lo que hay en el disco.
+    match Database::load(&directory) {
+        Ok(database) => {
+            shared.replace(database);
+            Ok(installed)
+        }
+        Err(error) => Err(format!(
+            "La protección se descargó, pero no se pudo abrir: {error}"
+        )),
+    }
+}
+
+/// Deja en la ventana todo lo que depende del paquete cargado, para que Inicio,
+/// Ajustes y el pie digan lo mismo.
+fn apply_database_state(window: &MainWindow, database: &Database) {
+    window.set_has_database(!database.is_empty());
+    window.set_protection_version(database.version().unwrap_or_default().into());
+    window.set_protection_rules(thousands(database.rules().len() as u64).into());
+    window.set_protection_hashes(thousands(database.hashes().len() as u64).into());
+    window.set_protection_line(protection_line(database.version()).into());
+    // El pie de Ajustes lleva el estado del paquete, no el último mensaje de una
+    // acción: si no, decir «Ignorado» cambiaba la versión que se lee allí.
+    window.set_core_status(status_for(database.version()).into());
+}
+
+fn protection_line(version: Option<&str>) -> String {
+    match version {
+        Some(version) => format!("Protección {version} instalada"),
+        None => "Sin protección".to_string(),
+    }
+}
+
 /// Carga el paquete de base de datos que acompaña al ejecutable.
 ///
 /// Si no está, o si no supera la verificación de firma, Rhino arranca igual y lo
@@ -747,8 +1011,8 @@ fn load_database() -> Database {
 
 fn status_for(version: Option<&str>) -> String {
     match version {
-        Some(version) => format!("Listo · base de datos {version}"),
-        None => "Listo · sin base de datos".to_string(),
+        Some(version) => format!("Listo · protección {version}"),
+        None => "Listo · sin protección".to_string(),
     }
 }
 
@@ -823,5 +1087,63 @@ mod tests {
             "Descargas"
         );
         assert_eq!(folder_name("instalador.exe"), "tu equipo");
+    }
+
+    #[test]
+    fn a_configured_server_wins() {
+        assert_eq!(
+            update_base(Some("https://ejemplo.test/db".into()), false).unwrap(),
+            "https://ejemplo.test/db"
+        );
+    }
+
+    #[test]
+    fn development_falls_back_to_the_local_site() {
+        assert_eq!(
+            update_base(None, true).unwrap(),
+            "http://localhost:27182/db/stable"
+        );
+    }
+
+    #[test]
+    fn a_release_without_a_server_says_so() {
+        assert_eq!(
+            update_base(None, false).unwrap_err(),
+            "Esta versión de prueba no tiene servidor de actualizaciones configurado"
+        );
+    }
+
+    #[test]
+    fn update_failures_are_spoken_without_technical_words() {
+        let network = update_problem(&UpdateError::Network("http://x: conexión".into()));
+        let damaged = update_problem(&UpdateError::Db(rhino_core::DbError::Format(
+            "firma mala".into(),
+        )));
+        let disk = update_problem(&UpdateError::Io(std::io::Error::other("sin espacio")));
+
+        for message in [network, damaged, disk] {
+            assert!(message.starts_with("No se pudo actualizar la protección:"));
+            assert!(!message.contains("http"));
+            assert!(!message.contains("firma"));
+        }
+    }
+
+    #[test]
+    fn ignored_content_is_not_listed_again() {
+        let ignored = HashSet::from(["abc".to_string()]);
+
+        assert!(should_list(&ignored, true, "def"));
+        assert!(!should_list(&ignored, true, "abc"));
+        // Sin hallazgos nunca hay fila, aunque el archivo estuviera ignorado.
+        assert!(!should_list(&ignored, false, "def"));
+    }
+
+    #[test]
+    fn the_protection_line_names_the_installed_version() {
+        assert_eq!(
+            protection_line(Some("2026.10.18")),
+            "Protección 2026.10.18 instalada"
+        );
+        assert_eq!(protection_line(None), "Sin protección");
     }
 }

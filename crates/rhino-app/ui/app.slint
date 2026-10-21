@@ -13,8 +13,8 @@
 // ofrece una acción**. Un usuario poco técnico no debe tener que elegir dónde
 // mirar. Todo lo que no ayude a decidir se va a la pantalla que le toca.
 //
-// «Poner a salvo» e «Historial» leen del disco. Solo «Ajustes» sigue siendo
-// maqueta (`demo`), y la tira MAQUETA · ESTADO existe únicamente en desarrollo.
+// Todas las pantallas leen del disco. La tira MAQUETA · ESTADO existe únicamente
+// en desarrollo y ya no gobierna nada: se queda como recordatorio de la fase 4.
 
 // La tipografía va incrustada: la interfaz no depende de las fuentes del sistema, y
 // las de Windows no miden como las de Linux. Inter (SIL OFL 1.1) en los tres pesos que
@@ -55,6 +55,15 @@ export struct HistoryItem {
     scope: string,
     files: string,
     findings: int,
+}
+
+// Un archivo que el usuario no quiere volver a ver. El sha256 viaja para poder
+// quitarlo de la lista sin depender de la fila que ocupe ahora.
+export struct IgnoredItem {
+    name: string,
+    path: string,
+    when: string,         // DD-MM-YYYY HH:mm, en hora local
+    sha256: string,
 }
 
 // ── Piezas ────────────────────────────────────────────────────────────────────
@@ -551,6 +560,8 @@ component HomeScreen inherits Rectangle {
     in property <color> tone;
     in property <string> glyph;
     in property <string> action;
+    in property <string> protection: ""; // «Protección 2026.10.18 instalada» o «Sin protección»
+    in property <bool> busy: false;      // descargando: el botón no se vuelve a pulsar
     callback act;
 
     VerticalLayout {
@@ -573,8 +584,16 @@ component HomeScreen inherits Rectangle {
                 width: 280px;
                 height: 44px;
                 label: root.action;
+                enabled: !root.busy;
                 clicked => { root.act(); }
             }
+        }
+
+        if root.protection != "" : Text {
+            text: root.protection;
+            font-size: Theme.t-sm;
+            color: Theme.ink-muted;
+            horizontal-alignment: center;
         }
     }
 }
@@ -1122,12 +1141,79 @@ component HistoryScreen inherits Rectangle {
     }
 }
 
-// Ajustes: lo que se toca de vez en cuando, en tres bloques.
+// Una fila de la lista de ignorados: nombre, ruta y la acción de quitarlo.
+component IgnoredRow inherits Rectangle {
+    in property <string> name;
+    in property <string> path;
+    in property <string> when;
+    callback stop;
+
+    height: 46px;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.name;
+                font-size: Theme.t-md;
+                font-weight: 600;
+                color: Theme.ink;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.path;
+                font-size: Theme.t-xs;
+                color: Theme.ink-muted;
+                overflow: elide;
+            }
+        }
+
+        Mid {
+            Text {
+                text: root.when;
+                font-size: Theme.t-xs;
+                color: Theme.ink-muted;
+                width: 118px;
+                vertical-alignment: center;
+            }
+        }
+
+        Mid {
+            AppButton {
+                width: 160px;
+                height: 32px;
+                primary: false;
+                quiet: true;
+                label: "Dejar de ignorar";
+                clicked => { root.stop(); }
+            }
+        }
+    }
+}
+
+// Ajustes: lo que se toca de vez en cuando, en tres bloques. Todo sale del disco.
 component SettingsScreen inherits Rectangle {
-    in property <int> demo;
-    in property <string> version;
+    in property <string> version;              // versión del programa
+    in property <string> protection-version;   // la del paquete instalado, vacía si no hay
+    in property <string> protection-rules;     // ya con separador de millares
+    in property <string> protection-hashes;
+    in property <bool> updating: false;
+    in property <string> update-status: "";
+    in property <[IgnoredItem]> ignored;
+    in property <string> ignored-problem: "";
     in property <string> core-status;
-    callback go(int);
+    callback update-protection;
+    callback stop-ignoring(int);
+
+    property <bool> installed: root.protection-version != "";
 
     VerticalLayout {
         // alignment: start para que los tres paneles tomen su alto natural: sin
@@ -1148,14 +1234,14 @@ component SettingsScreen inherits Rectangle {
                         width: 10px;
                         height: 10px;
                         border-radius: 5px;
-                        background: root.demo == 3 ? Theme.warn : Theme.ok;
+                        background: root.installed ? Theme.ok : Theme.warn;
                     }
                 }
 
                 Text {
-                    text: root.demo == 3
-                        ? "Sin datos de protección"
-                        : "Al día · actualizada hace 6 días";
+                    text: root.installed
+                        ? "Protección " + root.protection-version + " instalada"
+                        : "Falta actualizar la protección";
                     font-size: Theme.t-md;
                     color: Theme.ink-soft;
                     horizontal-stretch: 1;
@@ -1164,12 +1250,27 @@ component SettingsScreen inherits Rectangle {
 
                 Mid {
                     AppButton {
-                        width: 208px;
-                        primary: root.demo == 3;
+                        width: 224px;
+                        primary: !root.installed;
+                        enabled: !root.updating;
                         label: "Actualizar la protección";
-                        clicked => { }
+                        clicked => { root.update-protection(); }
                     }
                 }
+            }
+
+            if root.installed : Text {
+                text: root.protection-rules + " comprobaciones · "
+                    + root.protection-hashes + " archivos peligrosos conocidos";
+                font-size: Theme.t-sm;
+                color: Theme.ink-muted;
+            }
+
+            if root.update-status != "" : Text {
+                text: root.update-status;
+                font-size: Theme.t-sm;
+                color: Theme.ink-soft;
+                wrap: word-wrap;
             }
         }
 
@@ -1177,23 +1278,52 @@ component SettingsScreen inherits Rectangle {
             title: "Qué no debe mirar";
 
             Text {
-                text: "Todavía no has añadido ninguna carpeta.";
+                text: root.ignored.length == 0
+                    ? "Todavía no has ignorado ningún archivo."
+                    : (root.ignored.length == 1
+                        ? "1 archivo ignorado."
+                        : root.ignored.length + " archivos ignorados.");
                 font-size: Theme.t-md;
                 color: Theme.ink-muted;
             }
 
             Text {
-                text: "Rhino deja en paz lo que añadas aquí. Sirve para tus ficheros de trabajo o tus propias herramientas.";
+                text: "Rhino no vuelve a avisarte de estos archivos. Si su contenido cambia, se revisan otra vez.";
                 font-size: Theme.t-sm;
                 color: Theme.ink-muted;
                 wrap: word-wrap;
             }
 
-            HorizontalLayout {
-                spacing: 10px;
+            if root.ignored-problem != "" : Text {
+                text: root.ignored-problem;
+                font-size: Theme.t-sm;
+                color: Theme.warn;
+                wrap: word-wrap;
+            }
 
-                AppButton { width: 176px; primary: false; glyph: Icons.folder-open; label: "Añadir carpeta"; clicked => { } }
-                AppButton { width: 104px; primary: false; quiet: true; label: "Quitar"; enabled: false; clicked => { } }
+            // La lista puede crecer; la ventana mide 680 px fijos, así que se
+            // desplaza como la de hallazgos. Ancho explícito: 28 px de margen de
+            // la pantalla y 18 px de relleno del panel a cada lado. `parent` aquí
+            // mide el panel entero, no su interior, y sin esto el botón se salía
+            // 27 px por la derecha.
+            if root.ignored.length > 0 : scroll := Flickable {
+                width: root.width - 92px;
+                height: Math.min(root.ignored.length * 46px, 120px);
+                content-width: scroll.width;
+                content-height: rows.preferred-height;
+                interactive: true;
+
+                rows := VerticalLayout {
+                    width: scroll.width;
+                    spacing: 0px;
+
+                    for item[index] in root.ignored : IgnoredRow {
+                        name: item.name;
+                        path: item.path;
+                        when: item.when;
+                        stop => { root.stop-ignoring(index); }
+                    }
+                }
             }
         }
 
@@ -1210,7 +1340,7 @@ component SettingsScreen inherits Rectangle {
             }
 
             Text {
-                text: "Iconos de Lucide (ISC), en parte de Feather (MIT). El estado del núcleo es: " + root.core-status;
+                text: "Iconos de Lucide (ISC), en parte de Feather (MIT). Estado: " + root.core-status;
                 font-size: Theme.t-xs;
                 color: Theme.ink-muted;
                 wrap: word-wrap;
@@ -1246,6 +1376,15 @@ export component MainWindow inherits Window {
     in property <bool> has-scanned: false;    // hay algún análisis en el historial
     in property <string> last-scan: "";       // «hoy a las 21:14»
     in property <int> last-findings: 0;       // archivos con algo en la última revisión
+    in property <string> protection-version: "";  // la del paquete instalado
+    in property <string> protection-rules: "";    // ya con separador de millares
+    in property <string> protection-hashes: "";
+    in property <string> protection-line: "";     // «Protección X instalada» / «Sin protección»
+    in property <string> core-status: "";         // «Listo · protección X», solo en el pie
+    in property <[IgnoredItem]> ignored;
+    in property <string> ignored-problem: "";
+    in property <bool> updating-protection: false;
+    in property <string> update-status: "";
     in property <bool> show-demo: false;
     in-out property <string> file-path;
     in-out property <string> status: "Listo";
@@ -1263,6 +1402,8 @@ export component MainWindow inherits Window {
     callback ignore(int);
     callback restore(int);
     callback erase(int);
+    callback update-protection();
+    callback stop-ignoring(int);
 
     // El estado de Inicio sale de tres hechos del disco, en este orden: se está
     // analizando, falta la base de datos, y qué dejó la última revisión.
@@ -1303,7 +1444,9 @@ export component MainWindow inherits Window {
                     : (!root.has-scanned
                         ? "Un análisis completo tarda unos minutos y puedes seguir usando el equipo."
                         : root.reviewed + "No se encontró nada."))));
-    property <string> action: root.scanning
+    property <string> action: root.updating-protection
+        ? "Actualizando la protección…"
+        : root.scanning
         ? "Ver el progreso"
         : (!root.has-database
             ? "Actualizar la protección"
@@ -1524,9 +1667,12 @@ export component MainWindow inherits Window {
                         tone: root.tone;
                         glyph: root.tone-glyph;
                         action: root.action;
+                        protection: root.protection-line;
+                        busy: root.updating-protection;
                         act => {
                             if root.scanning { root.screen = 1; }
-                            else if root.has-findings && root.has-database { root.screen = 2; }
+                            else if !root.has-database { root.update-protection(); }
+                            else if root.has-findings { root.screen = 2; }
                             else {
                                 // «Analizar todo el equipo» empieza por el disco
                                 // del sistema, aunque se hubiera elegido antes
@@ -1588,10 +1734,17 @@ export component MainWindow inherits Window {
                         visible: root.screen == 5;
                         width: parent.width;
                         height: parent.height;
-                        demo: root.demo;
                         version: root.version;
-                        core-status: root.status;
-                        go(x) => { root.screen = x; }
+                        protection-version: root.protection-version;
+                        protection-rules: root.protection-rules;
+                        protection-hashes: root.protection-hashes;
+                        updating: root.updating-protection;
+                        update-status: root.update-status;
+                        ignored: root.ignored;
+                        ignored-problem: root.ignored-problem;
+                        core-status: root.core-status;
+                        update-protection => { root.update-protection(); }
+                        stop-ignoring(x) => { root.stop-ignoring(x); }
                     }
                 }
             }
