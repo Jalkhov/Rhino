@@ -234,8 +234,42 @@ prácticas de Ghidra, lo marcaba la heurística por la sección `.textbss`, que 
 enlazador de MSVC y que el cargador rellena de ceros; ya no cuenta. Los otros tres están
 sin revisar.
 
-El peor caso medido es de 115 MB. Es la cifra que sirve de referencia mientras el software
-crece; no es un tope que haya que respetar.
+El peor caso medido antes del reparto entre hilos era de 115 MB; con cuatro archivos en
+vuelo la referencia nueva es de 180 a 200 MB (ver abajo). Sigue sin ser un tope que haya que
+respetar.
+
+### Reparto entre hilos y corte por tipo
+
+El análisis era secuencial: un hilo recorría el árbol y cada archivo pasaba por hash,
+cabecera PE y reglas. Ahora son hasta cuatro hilos (`available_parallelism()` acotado a
+cuatro, porque más se pelean por el disco y cada archivo en vuelo puede mapear 64 MB) y las
+reglas se saltan en imágenes, audio y vídeo.
+
+Medido en este equipo (4 núcleos), binario release y el paquete real de 5137 reglas:
+
+| Árbol | Antes | Ahora |
+| --- | --- | --- |
+| `/usr/bin` (2395 archivos), con reglas | 26 s | **11,75 s** |
+| `/usr/bin`, sin reglas | 9 s | **3,62 s** |
+| `/usr/share/icons` (80.520 archivos, 19.485 imágenes) | 59,42 s | **43,51 s** |
+| `/usr/bin` con el corte, de control | 11,75 s | 11,99 s |
+
+El control importa: `/usr/bin` no tiene imágenes, así que el corte no debe moverlo, y no lo
+mueve. En el árbol de iconos el corte quita el 27 % del tiempo; el resto son 60.587 SVG, que
+sí pasan por las reglas porque las reglas detectan webshells y documentos. Nunca se cortan
+documentos (PDF, Office, SVG), fuentes ni ejecutables, y el hash de la capa 1 se calcula
+siempre.
+
+Dos costes que conviene saber. El CPU total **sube** (de 28,5 s a 40 s en `/usr/bin`): el
+mismo trabajo en menos tiempo de pared, con cuatro archivos en vuelo, más presión de caché y
+hasta cuatro mapeos a la vez. Y la memoria con reglas sube de unos 130 MB a 180-200 MB; sin
+reglas son 12 MB. En un equipo de 4 GB sigue siendo un 5 %, pero es la cifra nueva.
+
+Cargar el paquete real cuesta 1,1 s en release, así que la carga no se mueve al hilo de
+análisis: los 20 s del arranque en depuración son de compilar las reglas en ese perfil.
+
+Falta confirmar estas cifras en Windows: la máquina virtual tiene ahora 4 vCPU y los 9,3
+archivos por segundo de la tabla anterior son de un solo hilo.
 
 ### Actualizador
 
@@ -322,7 +356,7 @@ aprobada antes de conectar el núcleo y se conservan como referencia del diseño
 
 ## Pruebas
 
-**117 pruebas** con `cargo test --workspace`: 12 de la aplicación, 2 de contraste, 91 del
+**119 pruebas** con `cargo test --workspace`: 12 de la aplicación, 2 de contraste, 93 del
 núcleo, 6 de propiedades, 5 de integración y 1 del manifiesto del paquete.
 
 - **Unitarias:** obligatorias. Con `#[test]`, junto al código, vía `cargo test`.
@@ -482,13 +516,10 @@ avisar. Lo que no se ha medido no se afirma.
 - [x] **Fase 4** — Interfaz: seis pantallas ancladas en Avira, tipografía incrustada.
 - [x] **Fase 5** — Interfaz honesta y completa: datos reales, poner a salvo, historial,
   ajustes, teclado y accesibilidad.
-- [ ] **Fase 6 (la siguiente)** — Rendimiento del análisis. Hoy es secuencial: 9,3 archivos
-  por segundo medidos en Windows, que para el equipo entero son horas. Tres palancas, por
-  orden de rentabilidad: repartir entre 3 o 4 hilos (un motor de reglas por hilo, un archivo
-  en vuelo por hilo), cortar por tipo de archivo (el hash es barato y se queda; el resto se
-  salta por extensión y cabecera) y cargar las reglas fuera del hilo de la interfaz.
-  Criterio: archivos por segundo y memoria medidos antes y después.
-- [ ] **Fase 7** — Protección en tiempo real, en modo usuario y sin driver.
+- [x] **Fase 6** — Rendimiento del análisis: cuatro hilos y salto de las reglas en imágenes,
+  audio y vídeo. 26 s → 11,75 s en `/usr/bin`; el precio es más CPU total y 180-200 MB con
+  reglas. Falta confirmarlo en Windows con el binario nuevo.
+- [ ] **Fase 7 (la siguiente)** — Protección en tiempo real, en modo usuario y sin driver.
 - [ ] **Fase 8** — Endurecimiento anti-ingeniería-inversa y empaquetado.
 
 Tareas transversales, que se hacen una vez:

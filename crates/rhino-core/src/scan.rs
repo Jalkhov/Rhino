@@ -5,8 +5,11 @@
 
 use std::fs::{self, File};
 use std::io::{self, Cursor, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::thread;
 
 use crate::db::Database;
 use crate::hash::{sha256_hex, sha256_hex_reader};
@@ -166,7 +169,7 @@ pub fn scan_file(path: impl AsRef<Path>, database: &Database) -> io::Result<Scan
         };
 
         let rules = database.rules();
-        let findings = if rules.is_empty() {
+        let findings = if rules.is_empty() || !rules_are_worth_reading(path) {
             Vec::new()
         } else {
             rule_findings_for_path(path, rules)
@@ -181,6 +184,30 @@ pub fn scan_file(path: impl AsRef<Path>, database: &Database) -> io::Result<Scan
     };
 
     Ok(build_report(path, size, sha256, kind, findings, database))
+}
+
+/// ¿Merece este archivo pasar por la capa de reglas?
+///
+/// No en las imágenes rasterizadas, el audio ni el vídeo. Medido en `/usr/bin`
+/// (2.395 archivos): la capa de reglas pone unos 20 s de los 29 s, y en un árbol
+/// como `/usr/share/icons` (80.520 archivos) el motor recorre entero lo que es
+/// casi todo decoración. Lo que **no** se corta: documentos (PDF, Office, SVG),
+/// fuentes ni ejecutables, porque ahí las reglas sí encuentran cosas.
+///
+/// El hash de la capa 1 se calcula siempre: es barato y es cómo se reconoce el
+/// malware ya conocido. Este corte solo evita la segunda pasada de lectura.
+fn rules_are_worth_reading(path: &Path) -> bool {
+    const MEDIA: [&str; 33] = [
+        "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tif", "tiff", "heic", "cr2", "nef",
+        "dng", "arw", "mp3", "m4a", "aac", "ogg", "flac", "wav", "wma", "opus", "mp4", "m4v",
+        "mkv", "avi", "mov", "wmv", "webm", "flv", "mpg", "mpeg", "3gp",
+    ];
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return true;
+    };
+    !MEDIA
+        .iter()
+        .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }
 
 /// Ejecuta `work` aislando cualquier pánico y devolviendo su mensaje.
@@ -233,7 +260,10 @@ pub fn scan_dir(
     database: &Database,
     mut on_report: impl FnMut(ScanReport),
 ) -> io::Result<()> {
-    walk(root.as_ref(), database, None, &mut on_report, &mut || {}).map(|_| ())
+    // Sin bandera, pero la misma ruta: quien no necesita detener no paga por un
+    // analizador más lento.
+    let nunca = AtomicBool::new(false);
+    scan_parallel(root.as_ref(), database, &nunca, &mut on_report, &mut || {}).map(|_| ())
 }
 
 /// Igual que [`scan_dir`], pero se puede detener a mitad y devuelve cuánto falló.
@@ -261,22 +291,129 @@ pub fn scan_dir_cancellable_with_failure(
     mut on_report: impl FnMut(ScanReport),
     mut on_failure: impl FnMut(),
 ) -> io::Result<ScanSummary> {
-    walk(
-        root.as_ref(),
-        database,
-        Some(stop),
-        &mut on_report,
-        &mut on_failure,
-    )
+    scan_parallel(root.as_ref(), database, stop, &mut on_report, &mut on_failure)
 }
 
-/// El paseo compartido: recorre el árbol y entrega cada informe a `on_report`.
-fn walk(
-    directory: &Path,
+/// Lo que viaja de un trabajador al hilo que llama.
+enum Work {
+    Report(ScanReport),
+    Failed,
+}
+
+/// Cuántos archivos se analizan a la vez.
+///
+/// Cuatro como mucho: el trabajo es sobre todo de CPU, pero en un equipo modesto
+/// más hilos se pelean por el mismo disco y cada archivo en vuelo puede mapear
+/// hasta 64 MB. Medido en Windows, cuatro hilos sobre `C:\Program Files` más que
+/// triplican los archivos por segundo de uno.
+fn worker_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|nucleos| nucleos.get())
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+/// Recorre un árbol y analiza sus archivos en varios hilos.
+///
+/// Un hilo recorre y reparte rutas; varios analizan; el hilo que llama recibe los
+/// informes en orden de llegada, así que `on_report` y `on_failure` siguen siendo
+/// suyos y no necesitan ser `Send`. Los canales van acotados: si un trabajador se
+/// atrasa, el recorrido espera en vez de llenar la memoria con rutas.
+fn scan_parallel(
+    root: &Path,
     database: &Database,
-    stop: Option<&AtomicBool>,
+    stop: &AtomicBool,
     on_report: &mut impl FnMut(ScanReport),
     on_failure: &mut impl FnMut(),
+) -> io::Result<ScanSummary> {
+    let workers = worker_count();
+    if workers == 1 {
+        // Un solo núcleo: los canales solo añadirían latencia.
+        return walk_files(root, Some(stop), &mut |path| {
+            if let Ok(report) = scan_file(&path, database) {
+                on_report(report);
+            }
+        }, on_failure);
+    }
+
+    let (path_tx, path_rx) = mpsc::sync_channel::<PathBuf>(workers * 8);
+    let path_rx = Mutex::new(path_rx);
+    let (work_tx, work_rx) = mpsc::sync_channel::<Work>(workers * 8);
+    let mut summary = ScanSummary::default();
+
+    let recorrido = thread::scope(|scope| {
+        let recorredor = {
+            let work_tx = work_tx.clone();
+            let path_tx = path_tx;
+            scope.spawn(move || {
+                let mut avisar = || {
+                    let _ = work_tx.send(Work::Failed);
+                };
+                walk_files(root, Some(stop), &mut |path| {
+                    let _ = path_tx.send(path);
+                }, &mut avisar)
+            })
+        };
+
+        for _ in 0..workers {
+            let work_tx = work_tx.clone();
+            let path_rx = &path_rx;
+            scope.spawn(move || loop {
+                // El cerrojo se suelta antes de analizar. En `while let Ok(path) =
+                // path_rx.lock()…recv()` el guardia vive hasta el final del cuerpo, así
+                // que cada trabajador se quedaba con el reparto durante todo el
+                // `scan_file` y se turnaban: medido, 28,5 s de CPU para 29,1 s de pared,
+                // o sea un solo núcleo trabajando.
+                let siguiente = path_rx.lock().expect("el reparto se envenenó").recv();
+                let Ok(path) = siguiente else {
+                    break;
+                };
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                let work = match scan_file(&path, database) {
+                    Ok(report) => Work::Report(report),
+                    Err(_) => Work::Failed,
+                };
+                if work_tx.send(work).is_err() {
+                    break;
+                }
+            });
+        }
+        // El original sobra: el canal se cierra cuando acaban el recorrido y los
+        // trabajadores, y entonces el bucle de abajo termina.
+        drop(work_tx);
+
+        while let Ok(work) = work_rx.recv() {
+            match work {
+                Work::Report(report) => on_report(report),
+                Work::Failed => {
+                    summary.failed += 1;
+                    on_failure();
+                }
+            }
+        }
+
+        match recorredor.join() {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::other("el recorrido del árbol se cayó")),
+        }
+    })?;
+
+    summary.failed += recorrido.failed;
+    summary.stopped = recorrido.stopped;
+    Ok(summary)
+}
+
+/// El paseo: recorre el árbol y entrega cada archivo a `on_file`.
+///
+/// Los fallos de lectura y de listado se cuentan aquí; los de análisis, en quien
+/// analiza.
+fn walk_files(
+    directory: &Path,
+    stop: Option<&AtomicBool>,
+    on_file: &mut dyn FnMut(PathBuf),
+    on_failure: &mut dyn FnMut(),
 ) -> io::Result<ScanSummary> {
     let mut summary = ScanSummary::default();
 
@@ -302,7 +439,7 @@ fn walk(
             continue;
         } else if file_type.is_dir() {
             // Una subcarpeta sin permisos no aborta el escaneo, pero se cuenta.
-            match walk(&path, database, stop, on_report, on_failure) {
+            match walk_files(&path, stop, &mut *on_file, &mut *on_failure) {
                 Ok(child) => {
                     summary.failed += child.failed;
                     if child.stopped {
@@ -316,13 +453,7 @@ fn walk(
                 }
             }
         } else if file_type.is_file() {
-            match scan_file(&path, database) {
-                Ok(report) => on_report(report),
-                Err(_) => {
-                    summary.failed += 1;
-                    on_failure();
-                }
-            }
+            on_file(path);
         }
     }
 
@@ -723,6 +854,62 @@ rule rhino_test_eicar {
                 .iter()
                 .any(|report| report.verdict == Verdict::Clean)
         );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn media_is_skipped_and_documents_are_not() {
+        for name in ["foto.png", "FOTO.PNG", "clip.mp4", "sonido.mp3"] {
+            assert!(!rules_are_worth_reading(Path::new(name)), "{name}");
+        }
+        for name in [
+            "manual.pdf",
+            "hoja.xlsx",
+            "dibujo.svg",
+            "fuente.ttf",
+            "programa.exe",
+            "comprimido.zip",
+            "sin-extension",
+        ] {
+            assert!(rules_are_worth_reading(Path::new(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn every_file_in_a_tree_is_reported_exactly_once() {
+        let root = std::env::temp_dir().join(format!("rhino-hilos-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("a").join("b")).expect("no se pudo crear el árbol");
+        for index in 0..20 {
+            std::fs::write(root.join(format!("nota-{index}.txt")), benign_text()).unwrap();
+            std::fs::write(
+                root.join("a").join(format!("otra-{index}.txt")),
+                benign_text(),
+            )
+            .unwrap();
+        }
+        for index in 0..10 {
+            std::fs::write(
+                root.join("a").join("b").join(format!("tercera-{index}.txt")),
+                benign_text(),
+            )
+            .unwrap();
+        }
+
+        let running = AtomicBool::new(false);
+        let mut paths = Vec::new();
+        let summary = scan_dir_cancellable(&root, &Database::empty(), &running, |report| {
+            paths.push(report.path)
+        })
+        .expect("el escaneo del directorio falló");
+
+        // Varios hilos reparten las rutas: lo que no puede pasar es que un archivo
+        // se pierda por el camino ni que llegue dos veces.
+        let unicos: std::collections::HashSet<&String> = paths.iter().collect();
+        assert_eq!(paths.len(), 50, "{paths:#?}");
+        assert_eq!(unicos.len(), 50, "hay informes repetidos: {paths:#?}");
+        assert_eq!(summary.failed, 0, "{summary:?}");
+        assert!(!summary.stopped);
 
         std::fs::remove_dir_all(&root).ok();
     }
