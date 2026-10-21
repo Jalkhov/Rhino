@@ -148,13 +148,15 @@ Avira no llegan a 4.5 de contraste sobre la tarjeta `#3A434B`.
 
 - `README.md`: la carta del proyecto, con las decisiones, las mediciones de consumo y las
   pruebas de falsos positivos, cada una con su método.
-- `docs/ventana.png`: captura de la ventana actual (un campo de texto y un botón). Es el
-  anti-referente de la Fase 4, no un punto de partida.
+- Seis `docs/app-*.png`: la interfaz actual, ya conectada al núcleo (inicio, analizar,
+  archivos, poner-a-salvo, historial, ajustes), capturadas con el paquete real instalado.
+  Son la referencia contra la que se mide cualquier cambio de diseño.
 - `docs/referencias/avira-free-security.png`: la captura de la que salió la tabla de la paleta
   de Avira. Es la prueba de esa tabla; si se borra, los números quedan sin verificar.
-- Las 9 `docs/maqueta-*.png`: la maqueta de la Fase 4, todavía sin aprobar. Seis pantallas
-  (`inicio`, `analizar`, `hallazgos`, `poner-a-salvo`, `historial`, `ajustes`) y tres estados
-  más (`analizando`, `comprobacion`, `inicio-sin-datos`).
+- Las 9 `docs/maqueta-*.png`: la maqueta de la Fase 4, aprobada y ya sustituida por la
+  interfaz real. Se conservan como historia del diseño: seis pantallas (`inicio`, `analizar`,
+  `hallazgos`, `poner-a-salvo`, `historial`, `ajustes`) y tres estados más (`analizando`,
+  `comprobacion`, `inicio-sin-datos`).
 - Corpus sintético en `rhino_core::corpus` (inofensivo, generado en memoria).
 - Los textos reales del producto, que son el mejor material de terminología: los mensajes del
   motor ya están escritos en lenguaje llano.

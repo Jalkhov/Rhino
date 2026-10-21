@@ -93,5 +93,5 @@ las filas del riel. El contraste lo comprueba `crates/rhino-app/tests/contraste.
 Fase 6: repartir el análisis entre hilos y cortar por tipo de archivo. La medida de la fase
 5e (9,3 archivos por segundo con una CPU) la justifica con datos. Queda aparte la ventana a
 150 %: pide una referencia de 900x480, recalcular riel, rellenos y columnas y envolver
-Ajustes en un Flickable. El plan completo, con criterios de aceptación, está en
-`REPORT_1017.md`.
+Ajustes en un `Flickable`. El estado del proyecto, las fases y sus criterios de aceptación
+están en el `README.md`.

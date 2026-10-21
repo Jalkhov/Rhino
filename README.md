@@ -55,7 +55,7 @@ drivers. Es delicado, requiere firma de drivers y su propio ciclo de desarrollo,
 no aporta al objetivo de eficiencia en esta etapa. Es un tema que podría tocarse muy
 a futuro, pero no condiciona ninguna decisión actual.
 
-La protección en tiempo real (Fase 5) se plantea con las capacidades de modo usuario
+La protección en tiempo real (Fase 7) se plantea con las capacidades de modo usuario
 disponibles, sin driver.
 
 ## Privacidad
@@ -306,12 +306,24 @@ de eficiencia).
 La interfaz vive en su propio crate (`rhino-app`), desacoplada del núcleo
 (`rhino-core`), para poder cambiarla sin tocar la lógica.
 
-La ventana mide 480x320 y hoy solo tiene un campo de ruta y un botón; la interfaz de verdad
-es la Fase 4.
+La ventana mide 980x680 en píxeles lógicos y el sistema la escala: al 125 % mide 1222 px
+físicos, medidos en Windows. El diseño sale de una captura medida de Avira Free Security, no
+de una idea; de ahí vienen la paleta, las superficies planas, un solo acento azul y el verde
+de "está bien". La paleta y su porqué están en `ui/theme.slint` y `PRODUCT.md`, y las 18
+reglas de layout que costaron una ronda de arreglos cada una están en `AGENTS.md`.
 
-![La ventana de Rhino](docs/ventana.png)
+Tres decisiones que no se negocian en pantalla: **ningún botón es rojo** (el rojo solo marca
+hallazgos), **cada pantalla dice una cosa y ofrece una acción**, y **el vocabulario es llano**
+(nada de "firmas", "cuarentena", "motor", "regla" ni "capa"). El contraste se comprueba con
+una prueba, no a ojo.
+
+Capturas del estado actual en `docs/app-*.png`. Las de `docs/maqueta-*.png` son la maqueta
+aprobada antes de conectar el núcleo y se conservan como referencia del diseño.
 
 ## Pruebas
+
+**117 pruebas** con `cargo test --workspace`: 12 de la aplicación, 2 de contraste, 91 del
+núcleo, 6 de propiedades, 5 de integración y 1 del manifiesto del paquete.
 
 - **Unitarias:** obligatorias. Con `#[test]`, junto al código, vía `cargo test`.
 - **De integración:** en `tests/`, para la lógica que cruza módulos.
@@ -332,82 +344,48 @@ es la Fase 4.
   firma ausente, firma hecha con otra clave, manifiesto alterado después de firmar y archivo
   alterado con manifiesto válido. Los dos últimos fallan de forma distinta y deliberada
   (`Signature` para la firma, `Corrupt` para el contenido).
+- **Interfaz:** `crates/rhino-app/tests/contraste.rs` lee `ui/theme.slint`, comprueba 25 pares
+  de color contra AA (4,5:1 para texto, 3:1 para marcas finas) y falla si un botón usa el
+  color de hallazgo. El layout no se prueba automáticamente: se mide sobre capturas, con la
+  receta de `AGENTS.md`.
 
 ## Estado
 
 **Fase 1 (investigación) — completada.** Lenguaje: Rust. Interfaz: Slint.
 
-**Fase 2 (entorno y esqueleto) — completada.** Workspace de Cargo con `rhino-core`
-(núcleo agnóstico) y `rhino-app` (interfaz Slint), con pruebas unitarias. Compilación
-cruzada a `i686-pc-windows-msvc` operativa y verificada (el binario resultante es un
-PE32 de GUI para i386). Repositorio publicado en privado.
+**Fase 2 (entorno y esqueleto) — completada.** Workspace con `rhino-core` (núcleo
+agnóstico), `rhino-app` (interfaz) y `rhino-db` (constructor del paquete). Compilación
+cruzada a x86 y x64 de Windows, operativa y verificada.
 
-**Fase 3 (motor de escaneo) — en curso.** Arquitectura de detección y base de datos
-definidas en la sección "Motor de detección y base de datos".
+**Fase 3 (motor de escaneo) — completada.** Las tres capas, el paquete firmado y el
+actualizador funcionan y están probados contra el paquete real de 5137 reglas.
 
-Primera rebanada, ya funcionando:
+**Fase 4 (interfaz) — completada.** Seis pantallas ancladas en una captura medida de Avira,
+vocabulario llano, tipografía incrustada y medidas verificadas sobre capturas.
 
-- `rhino-core`: hashing SHA-256 por *streaming* (búfer fijo de 64 KiB) y lector mínimo de
-  cabeceras PE con lecturas acotadas. La capa de reglas recibe la **ruta**, no los bytes:
-  el motor decide entre leer y mapear, con un tope de 64 MB por archivo. Ninguna capa carga
-  el archivo completo en memoria.
-- `scan()` devuelve un informe estructurado (`ScanReport`) con el veredicto y la lista de
-  hallazgos, y **nombra la capa** que detectó cada uno: capa 1 (hash conocido), capa 2
-  (reglas YARA-X) y capa 3 (heurística propia: secciones de empaquetador y secciones
-  ejecutables-escribibles).
-- Motor YARA-X integrado (`RuleSet::compile` / `RuleSet::from_compiled`, este último para
-  las reglas precompiladas) con solo los módulos que el ruleset real usa. Cada hallazgo de
-  regla lleva autor y URL de origen, que es lo que exige la licencia DRL 1.1.
-- La ventana ya escanea de verdad: se escribe una ruta, el análisis corre en un hilo
-  aparte (la ventana no se congela) y el resultado aparece en pantalla.
-- `scan_dir()` recorre un directorio completo sin seguir enlaces simbólicos y omitiendo lo
-  ilegible, y **entrega cada informe al momento** (`impl FnMut(ScanReport)`) en vez de
-  acumularlos: escanear un disco entero ya no crece en memoria. El ejemplo `scan_dir` mide
-  falsos positivos y consumo sobre binarios reales y acepta un `.yar`, un `.yarc` ya
-  compilado o ninguno.
-- **Base de datos firmada:** `Package`/`Database` cargan el paquete, verifican la firma
-  Ed25519 del manifiesto y el tamaño y SHA-256 de cada archivo antes de usarlo. La capa 1 ya
-  no es una lista embebida: sale de `hashes.bin`. Detalles y comandos en "Paquete de base de
-  datos".
-- Corpus sintético reutilizable en `rhino_core::corpus`, compartido por las pruebas
-  unitarias y las de integración.
-- La ventana se ha ejecutado y mirado (captura en `docs/ventana.png`). Ahí apareció un fallo
-  real: sin base de datos, el EICAR salía «limpio». Ahora el informe lo dice de forma
-  explícita («sin base de datos: no se comprobaron hashes ni reglas») y el veredicto nunca
-  finge haber mirado lo que no pudo mirar.
-- **Aislamiento del pánico:** el perfil de release usa `unwind` a propósito y cada archivo se
-  analiza dentro de `scan::isolate`. Uno que haga caer al lector PE o a YARA-X se reporta como
-  *no analizado* (sospechoso), en vez de llevarse por delante el escaneo entero.
-- Los flujos de integración continua están escritos pero **desactivados** (ver "Integración
-  continua"), así que el paquete de base de datos se construye y publica a mano con
-  `web/tools/publish-db.sh`.
-- Pruebas: 73 en total (58 unitarias del núcleo, 4 del constructor del paquete, 6 de
-  propiedades y 5 de integración), incluidas pruebas sobre archivos reales en disco (el EICAR
-  inofensivo y ejecutables sintéticos), sobre firmas manipuladas, sobre el actualizador contra
-  un servidor HTTP local de prueba, y de propiedades sobre los parsers.
+**Fase 5 (interfaz honesta y completa) — completada**, en cinco rebanadas. La aplicación ya
+no enseña ningún dato de ejemplo:
 
-Pendiente de esta fase: nada del motor ni del paquete. El primer paquete real ya está
-publicado y sirviéndose desde el sitio de `web/`, y el circuito completo (descargar, verificar
-la firma, instalar, y no volver a bajar nada si ya está al día) está probado contra él. Quedan
-los ejecutables en el sitio (`web/public/app/` está vacía) y reactivar la integración continua
-cuando la cuenta de GitHub quede libre.
+- **Inicio** dice lo que sabe. Sin paquete pide actualizar; con paquete y sin análisis dice
+  que todavía no se ha mirado nada; con un análisis hecho, verde o rojo según lo encontrado.
+  Nunca afirma "protegido" sin una revisión que lo sostenga.
+- **Analizar** un archivo, una carpeta o todo el equipo, con el recuento en vivo, el archivo
+  que está mirando y un botón para detenerlo. El selector de archivo y carpeta es el nativo
+  de Windows (`rfd`). Los archivos que no se pudieron leer se cuentan y se enseñan.
+- **Archivos sospechosos** enseña los hallazgos reales con la capa que los encontró y, si
+  vino de una regla, su identificador, autor y origen: la atribución que exige DRL 1.1.
+- **Poner a salvo** mueve el archivo a `%LOCALAPPDATA%\Rhino\apartados` con su ficha, sin
+  extensión, y permite recuperarlo o borrarlo. Nunca sobrescribe una copia existente.
+- **Historial** apunta cada revisión terminada en `historial.jsonl` y sobrevive al reinicio.
+  Un análisis detenido o fallido no se apunta, porque no es una revisión.
+- **Ajustes** enseña la protección instalada, la descarga (firmada, verificada y con relevo
+  atómico, sin reiniciar) y la lista de archivos ignorados, que persiste por SHA-256.
+- **Teclado y accesibilidad**: se recorre todo con Tab y Shift+Tab, se activa con Intro y
+  Espacio, el foco se ve con un aro de 2 px y cada control declara su papel y su etiqueta
+  (`accessible-*`). Verificado en Windows con el binario de 32 bits.
 
-Decisiones tomadas y descartadas a conciencia, que no son deuda pendiente:
-
-- **No se filtran las reglas por etiqueta.** Las `MEMORY`/`LOG` son ~67 de 5137 (1,3%), y las
-  627 sin etiqueta posiblemente sí aplican a archivos en disco. YARA-X no permite quitar
-  reglas ya compiladas, así que filtrar exigiría cirugía sobre el texto de las reglas: un
-  divisor mal hecho perdería detecciones en silencio, que es el peor fallo posible en un
-  antivirus.
-- **No hay heurística de entropía propia.** La entropía de archivo completo marca todo lo
-  comprimido y cifrado (ZIP, JPEG, vídeo), justo el falso positivo que hunde a un antivirus;
-  la de sección obligaría a leer los datos de las secciones, contra el diseño de leer solo
-  cabeceras.
-- **No hay heurística de macros de Office propia.** El paquete de YARA Forge ya cubre el
-  malware de Office; duplicarlo añadiría falsos positivos sin añadir detecciones.
-- **El sitio de pruebas no tiene TLS.** Es HTTP en local, suficiente para probar; en
-  producción habrá que servirlo por HTTPS, porque el manifiesto viaja firmado pero una red
-  sin cifrar deja ver qué descarga el usuario.
+La única maqueta que queda es la tira **MAQUETA · ESTADO**, que solo existe en las
+compilaciones de depuración.
 
 ## Compilación cruzada
 
@@ -473,14 +451,55 @@ Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atad
 `opencode.jsonc` declara los MCP útiles para el proyecto: `context-mode`,
 `ddg-search`, `rea` (ingeniería inversa) y `context7` (documentación de librerías).
 
-## Fases (tentativo, sin apurar)
+## Método de trabajo
 
-- [x] Fase 1 — Investigación y decisión de lenguaje (Rust, Slint).
-- [x] Fase 2 — Entorno de compilación cruzada Ubuntu → Windows (i686 y x64) y esqueleto del proyecto.
-- [ ] Fase 3 — Núcleo de escaneo (hashes, motor YARA-X, heurística propia y paquete de base de datos).
-- [ ] Fase 4 — Interfaz de usuario intuitiva y liviana.
-- [ ] Fase 5 — Protección en tiempo real en modo usuario (sin driver).
-- [ ] Fase 6 — Endurecimiento anti-ingeniería-inversa y empaquetado.
+Lo que ha hecho avanzar el proyecto, y conviene no perder:
+
+- **Reglas estáticas antes que memoria.** Cada trampa de Slint que costó una ronda está en
+  `AGENTS.md` con su caso y su número, para leerlas antes de dibujar.
+- **Medir, no mirar.** Toda comprobación visual se hace midiendo píxeles sobre una captura
+  (receta en `AGENTS.md`), y el contraste con una prueba que lee la paleta.
+- **Encargos con alcance, firmas esperadas y criterio de aceptación.** Las rebanadas que
+  salieron bien fueron las que se podían revisar y verificar por separado.
+- **`docs/ESTADO.md`**: una página con qué funciona, qué es maqueta y qué está roto,
+  actualizada en cada commit.
+- **Fechas**: en disco siempre UTC en ISO 8601; en pantalla `DD-MM-YYYY HH:mm` en hora local.
+
+Y lo que hay que vigilar, porque ya pasó: dar por bueno lo que no se ha probado, y tomar
+decisiones de producto (ocultar controles, resumir un número, mover una tarjeta) sin
+avisar. Lo que no se ha medido no se afirma.
+
+## Fases
+
+- [x] **Fase 1** — Investigación y decisión de lenguaje (Rust, Slint).
+- [x] **Fase 2** — Entorno de compilación cruzada Ubuntu → Windows (i686 y x64) y esqueleto.
+- [x] **Fase 3** — Núcleo de escaneo: hashes, YARA-X, heurística PE y paquete firmado.
+- [x] **Fase 4** — Interfaz: seis pantallas ancladas en Avira, tipografía incrustada.
+- [x] **Fase 5** — Interfaz honesta y completa: datos reales, poner a salvo, historial,
+  ajustes, teclado y accesibilidad.
+- [ ] **Fase 6 (la siguiente)** — Rendimiento del análisis. Hoy es secuencial: 9,3 archivos
+  por segundo medidos en Windows, que para el equipo entero son horas. Tres palancas, por
+  orden de rentabilidad: repartir entre 3 o 4 hilos (un motor de reglas por hilo, un archivo
+  en vuelo por hilo), cortar por tipo de archivo (el hash es barato y se queda; el resto se
+  salta por extensión y cabecera) y cargar las reglas fuera del hilo de la interfaz.
+  Criterio: archivos por segundo y memoria medidos antes y después.
+- [ ] **Fase 7** — Protección en tiempo real, en modo usuario y sin driver.
+- [ ] **Fase 8** — Endurecimiento anti-ingeniería-inversa y empaquetado.
+
+Tareas transversales, que se hacen una vez:
+
+1. **Capturas doradas y galería de componentes.** Un `xtask` que arranque la app, recorra
+   pantallas y estados y compare con `compare -metric AE`, más una pantalla `gallery.slint`
+   (solo en depuración) con cada componente en cada estado. Todas las trampas de la fase 4
+   —el área que colapsaba, la etiqueta descentrada, la tarjeta enorme— son justo lo que esa
+   prueba detecta, y el botón terciario que salía azul se habría visto el primer día.
+2. **Una pantalla es una matriz de estados**, no una imagen: vacía, cargando, con uno, con
+   muchos, sin base y con error. Los tres defectos que sobrevivieron a la fase 4 eran estados
+   que nadie había mirado.
+3. **Anchos de botón por variante, no a mano.** Hoy hay ocho anchos escritos a mano y la
+   aritmética se rehace cada vez que sube la escala tipográfica. Dos o tres variantes
+   cerradas con su tabla de anchos revisada una vez.
+4. **Los tres falsos positivos** de la pasada por `C:\Program Files` siguen sin revisar.
 
 ## Riesgos conocidos
 
@@ -512,3 +531,16 @@ Cuando haya dominio, esta carpeta se copia tal cual al servidor: nada está atad
   justo el plan de desarrollo definido).
 - La mitigación de ingeniería inversa es una barrera, no una garantía: ningún lenguaje
   vuelve un binario irrevertible.
+
+- **El análisis es secuencial y lento.** 9,3 archivos por segundo en Windows, y el coste lo
+  pone el contenido, no el número de archivos: un equipo entero son horas. Es la fase 6.
+- **La ventana no entra a 150 %.** 980x680 lógicos son 1470x1020 físicos; en un portátil de
+  1366x768 con esa escala pide una referencia de unos 900x480, recalcular riel, rellenos y
+  columnas del historial, y envolver Ajustes en un `Flickable`.
+- **El lector de pantalla no se ha probado.** El árbol de accesibilidad compila, los papeles
+  y las etiquetas están puestos y el teclado está verificado, pero en el equipo de desarrollo
+  no hay sesión AT-SPI: nadie lo ha oído hablar.
+- **Deudas menores de la interfaz:** «Borrar» de Poner a salvo no pide confirmación; el aviso
+  de copia repetida mide 372 px y se elide en los 320 del encabezado; el análisis de un
+  archivo suelto no atiende a Detener; y en depuración el arranque con paquete tarda unos
+  20 s porque compila las reglas.
