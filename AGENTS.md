@@ -90,3 +90,23 @@ shell. La ventana queda en +0+0. Filas del riel: x=100 con y=82 Inicio, 121 Anal
 
 15. El mensaje de consola `base de datos no cargada: … Not a directory (os error 20)` es el
     fallo conocido de desarrollo (`target/debug/rhino-db` es el constructor, no una carpeta).
+
+## Commits
+
+**Conventional Commits**, en español y en imperativo: `tipo(alcance): asunto`, y el porqué en
+el cuerpo.
+
+```
+feat(scan): reparte el analisis entre cuatro hilos
+fix(update): no instala un paquete mas antiguo
+docs: asienta el README en el estado real
+test(vm): volcado de accesibilidad reproducible
+```
+
+Tipos: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`, `build`, `ci`. El alcance es
+el módulo o la carpeta (`scan`, `update`, `ui`, `vm`, `db`). El asunto no lleva punto final y
+cabe en 72 caracteres. Un cambio incompatible lleva `!` tras el tipo (`feat(api)!:`) o un
+`BREAKING CHANGE:` en el pie.
+
+El historial anterior no se reescribe; los commits nuevos se escriben así desde ya, para que
+la CI los pueda aprovechar el día que haya CI.
