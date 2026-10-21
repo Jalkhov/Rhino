@@ -1,6 +1,14 @@
 # Rhino
 
+[![Licencia](https://img.shields.io/badge/licencia-GPL--3.0-blue.svg)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20%C2%B7%20x86%20%7C%20x64-0078D6?logo=windows)](README.md#plataforma-objetivo)
+[![Rust](https://img.shields.io/badge/Rust-1.98.1-CE412B?logo=rust)](https://www.rust-lang.org)
+[![Slint](https://img.shields.io/badge/Slint-1.18.1-2379F4)](https://slint.dev)
+[![Estado](https://img.shields.io/badge/estado-beta%20cerrada-yellow)](https://github.com/Jalkhov/Rhino/releases)
+[![Beta](https://img.shields.io/github/v/release/Jalkhov/Rhino?include_prereleases&label=beta&color=yellow)](https://github.com/Jalkhov/Rhino/releases)
+
 Antivirus ligero, rápido y de bajo consumo para Windows, con interfaz intuitiva y gratuito.
+En beta cerrada: ya analiza, aparta archivos, guarda historial y actualiza su protección.
 
 Funciona en Windows 10 y 11, de 32 y 64 bits. El **mínimo exigido es Windows 10 de 32 bits
 con 4 GB de RAM**, que es el equipo al que apunta el diseño; no es un límite de
@@ -443,6 +451,33 @@ no enseña ningún dato de ejemplo:
 La única maqueta que queda es la tira **MAQUETA · ESTADO**, que solo existe en las
 compilaciones de depuración.
 
+### La primera beta
+
+`v0.1.0-beta1` está publicada con los dos binarios (x86 y x64) y su `SHA256SUMS`. Se probó en
+Windows: el `.exe` de la release **descargó e instaló la protección sin configurar nada**, y
+la base quedó en `%LOCALAPPDATA%\Rhino\rhino-db` con la versión `2026.10.18`, 5137
+comprobaciones y 1939 archivos peligrosos conocidos. Ese es el circuito que va a recorrer quien
+la pruebe, y funciona.
+
+Lo que sigue sin probar: el desinstalador, el lector de pantalla de verdad (el árbol de
+accesibilidad sí existe) y el aspecto a 150 % de escala.
+
+## Probar la beta
+
+<https://github.com/Jalkhov/Rhino/releases>
+
+El ejecutable **no está firmado**, así que SmartScreen dirá «Windows protegió tu PC»:
+«Más información» y después «Ejecutar de todas formas». El archivo no está modificado; el
+SHA-256 publicado en la release sirve para comprobarlo:
+
+```powershell
+Get-FileHash .\rhino-0.1.0-beta1-x86.exe -Algorithm SHA256
+```
+
+Al abrirlo, la tarjeta de Inicio pide actualizar la protección: eso descarga el paquete
+firmado desde la release `db-latest` y lo verifica antes de instalarlo. Después, «Analizar
+todo el equipo».
+
 ## Compilación cruzada
 
 Desde Ubuntu, con `cargo-xwin` (target MSVC de Microsoft, que Rust mantiene en Tier 1
@@ -545,13 +580,13 @@ avisar. Lo que no se ha medido no se afirma.
 - [x] **Fase 5** — Interfaz honesta y completa: datos reales, poner a salvo, historial,
   ajustes, teclado y accesibilidad.
 - [x] **Fase 6** — Rendimiento del análisis: cuatro hilos y salto de las reglas en imágenes,
-  audio y vídeo. 26 s → 11,75 s en `/usr/bin`; el precio es más CPU total y 180-200 MB con
-  reglas. Falta confirmarlo en Windows con el binario nuevo.
+  audio y vídeo. En Linux, 26 s → 11,75 s sobre `/usr/bin`; en Windows, **77,5 archivos por
+  segundo** en `C:\Program Files`, con el pico de memoria en 225 MB. El precio es más CPU total.
 - [ ] **Fase 7 (la siguiente)** — Protección en tiempo real, en modo usuario y sin driver.
-- [ ] **Fase 8** — Integridad y cadena de confianza: no aceptar un paquete más antiguo
-  que el instalado (uno viejo, válidamente firmado, apagaría detecciones), firmar el
-  ejecutable cuando haya programa de firma para código abierto, publicar el SHA-256 de cada
-  release y tener un plan para la clave privada (rotación y qué hacer si se filtra).
+- [~] **Fase 8** — Integridad y cadena de confianza. Hecho: no se instala un paquete más
+  antiguo que el instalado (uno viejo, válidamente firmado, apagaría detecciones), y cada
+  release publica su SHA-256. Falta: firmar el ejecutable cuando haya programa de firma para
+  código abierto, y un plan para la clave privada (rotación y qué hacer si se filtra).
 
 Tareas transversales, que se hacen una vez:
 
@@ -568,6 +603,10 @@ Tareas transversales, que se hacen una vez:
    cerradas con su tabla de anchos revisada una vez.
 
 ## Riesgos conocidos
+
+- **El ejecutable no está firmado.** SmartScreen avisa en el primer arranque y hay que pasar
+  por «Más información» → «Ejecutar de todas formas». Se publica el SHA-256 de cada binario y,
+  cuando el proyecto pueda acogerse a un programa de firma para código abierto, se firmará.
 
 - **La clave privada de firma vive solo en este equipo**, en `~/.config/rhino/db-key`
   (permisos 600) y sin respaldo remoto. Si se pierde, no se pueden firmar más paquetes y habría
