@@ -9,6 +9,14 @@ consola elevada, porque con la contraseña en blanco Windows aplica `LimitBlankP
 Canal con el invitado: la carpeta compartida del host `/home/jalkhov/Descargas/VBOX10/`
 aparece dentro como **`Z:`**. Se deja ahí un binario y se lee lo que escriba, sin capturas.
 El sitio del host se ve desde el invitado como `http://10.0.2.2:27182/db/stable`.
+Lo sirve el servicio de usuario `rhino-web.service`, habilitado y con `Linger=yes`, así que
+arranca al iniciar el equipo. Para reinstalarlo:
+
+```sh
+cp vm/rhino-web.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now rhino-web.service
+```
 
 Nota de `guestcontrol`: con `--exe` **no se repite** el nombre del ejecutable; los argumentos
 empiezan en el primero. `--exe cmd.exe -- /c "..."` sí, `--exe cmd.exe -- cmd.exe /c "..."`
