@@ -1,10 +1,10 @@
 :root {
-  --tinta: #131a22;
+  --tinta: #1b2428;
   --papel: #ffffff;
   --tenue: #5c6875;
   --linea: #e4e8ed;
   --fondo: #f6f8fa;
-  --acento: #0f766e;
+  --acento: #1767e2;
 }
 
 * {
@@ -175,4 +175,54 @@ footer p {
 
 footer strong {
   color: var(--tinta);
+}
+
+h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+ul {
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+}
+
+li {
+  margin: 0.35rem 0;
+}
+
+a {
+  color: var(--acento);
+}
+
+.estado {
+  display: inline-block;
+  margin: 1.25rem 0 0;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #3a434b;
+  border-radius: 999px;
+  color: #c9d1da;
+  font-size: 0.875rem;
+}
+
+/* El botón que importa. El resto de la página no compite con él. */
+.boton.principal {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: var(--papel);
+}
+
+.boton.principal:hover {
+  background: #145dcd;
+  border-color: #145dcd;
+  color: var(--papel);
 }

@@ -3,103 +3,109 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Rhino</title>
-    <meta name="description" content="Antivirus de bajo consumo para Windows. Base de datos firmada y descargas." />
+    <title>Rhino — antivirus ligero para Windows</title>
+    <meta
+      name="description"
+      content="Antivirus gratuito y ligero para Windows 10 y 11, de 32 y 64 bits. Analiza cuando se lo pides, aparta lo sospechoso y no envía nada a ningún sitio."
+    />
     <link rel="stylesheet" href="estilo.css" />
   </head>
   <body>
     <header>
       <div class="ancho">
         <p class="marca"><span class="punto"></span>Rhino</p>
-        <p class="lema">Antivirus de bajo consumo para Windows. Sin telemetría.</p>
+        <p class="lema">Antivirus gratuito y ligero para Windows. Sin cuentas y sin telemetría.</p>
+        <p class="estado">Beta cerrada · Windows 10 y 11 · 32 y 64 bits</p>
       </div>
     </header>
 
     <main class="ancho">
       <section>
-        <h2>Base de datos de firmas</h2>
-        <p class="nota">
-          Reglas YARA-X precompiladas y hashes conocido-malo. El paquete va firmado
-          (Ed25519) y Rhino comprueba la firma y el SHA-256 de cada archivo antes de usarlo.
+        <h1>Un antivirus que no se nota</h1>
+        <p>
+          Analiza lo que le pidas, te dice qué ha encontrado y por qué, y aparta lo
+          sospechoso sin borrarlo: lo recuperas cuando quieras.
         </p>
 
-        <article class="tarjeta" id="paquete">
-          <p class="cargando">Consultando el canal estable…</p>
-        </article>
-
-        <p class="nota">
-          Canal <code>estable</code>. Para probar otro canal basta con apuntar la
-          aplicación a su carpeta: un canal es un directorio.
-        </p>
-      </section>
-
-      <section>
-        <h2>Descargas</h2>
         <div class="descargas">
-          <a class="boton" href="app/rhino-app-32.exe">Windows 32 bits</a>
-          <a class="boton" href="app/rhino-app-64.exe">Windows 64 bits</a>
+          <a
+            class="boton principal"
+            href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta2/rhino-0.1.0-beta2-x64.exe"
+            >Descargar para Windows</a
+          >
+          <a
+            class="boton"
+            href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta2/rhino-0.1.0-beta2-x86.exe"
+            >Versión de 32 bits</a
+          >
         </div>
         <p class="nota">
-          Windows 10 o superior. La compilación de 32 bits es la que corre también
-          en Windows de 64 bits.
+          Unos 24 MB y 21 MB. Windows 10 o superior; la de 32 bits también funciona en
+          Windows de 64 bits. Todas las versiones, en
+          <a href="https://github.com/Jalkhov/Rhino/releases">las notas de cada entrega</a>.
         </p>
       </section>
 
       <section>
-        <h2>Probar en local</h2>
-        <p class="nota">
-          Con este sitio levantado, cualquier Rhino descarga de él en vez de hacerlo
-          de internet:
+        <h2>Antes de abrirlo</h2>
+        <p>
+          El ejecutable <strong>todavía no está firmado</strong>, así que Windows
+          SmartScreen avisará. Es normal en un proyecto que empieza: pulsa
+          «Más información» y después «Ejecutar de todas formas».
         </p>
-        <pre><code>RHINO_DB_URL=http://localhost:27182/db/stable cargo run -p rhino-app</code></pre>
+        <p class="nota">Puedes comprobar que el archivo ha llegado entero:</p>
+        <pre><code>Get-FileHash .\rhino-0.1.0-beta2-x64.exe -Algorithm SHA256</code></pre>
         <p class="nota">
-          O instalar el paquete sin pasar por la aplicación:
+          El resultado tiene que coincidir con el
+          <a
+            href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta2/SHA256SUMS"
+            >SHA256SUMS</a
+          >
+          de esa entrega.
         </p>
-        <pre><code>cargo run -p rhino-db -- update http://localhost:27182/db/stable ~/.local/share/Rhino/rhino-db</code></pre>
+      </section>
+
+      <section>
+        <h2>Qué hace hoy</h2>
+        <ul>
+          <li>Analiza un archivo, una carpeta o el equipo entero, y se puede detener.</li>
+          <li>Dice qué ha encontrado y con qué regla, con su autor y su origen.</li>
+          <li>Aparta lo sospechoso sin borrarlo, y lo devuelve cuando se lo pides.</li>
+          <li>Guarda el historial y descarga la protección firmada, sin reiniciar.</li>
+          <li>Se maneja con el teclado y no necesita tarjeta gráfica.</li>
+        </ul>
+
+        <h3>Qué no hace todavía</h3>
+        <ul>
+          <li>No vigila en tiempo real: analiza cuando se lo pides.</li>
+          <li>Quedan tres falsos positivos conocidos sobre 4.413 archivos.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Por qué es ligero</h2>
+        <p>
+          El análisis se reparte entre cuatro hilos y se salta lo que no puede ejecutarse:
+          imágenes, audio y vídeo pasan solo por la comprobación de hashes. En un equipo de
+          4 GB analiza unos 77 archivos por segundo y usa unos 225 MB con la protección
+          cargada.
+        </p>
+        <p class="nota">
+          Es software libre bajo GPL-3.0:
+          <a href="https://github.com/Jalkhov/Rhino">el código está en GitHub</a>, con sus
+          medidas y sus decisiones.
+        </p>
       </section>
     </main>
 
     <footer>
       <div class="ancho">
-        <p><strong>Nada sale del equipo.</strong> Rhino no envía rutas, nombres de archivo, contenido ni telemetría. Lo único que cruza la red es la descarga de este paquete.</p>
+        <p>
+          <strong>Nada sale del equipo.</strong> Rhino no envía rutas, nombres de archivo,
+          contenido ni telemetría. Lo único que cruza la red es la descarga de la
+          protección, que va firmada y se verifica antes de usarla.
+        </p>
       </div>
     </footer>
-
-    <script>
-      // La página lee el manifiesto publicado en vez de repetir sus datos: así no
-      // puede quedar desfasada respecto a lo que hay de verdad en el canal.
-      const destino = document.getElementById("paquete");
-
-      const filas = [
-        ["Versión", (m) => m.version],
-        ["Canal", (m) => m.channel],
-        ["Publicado", (m) => m.created],
-        ["Reglas", (m) => m.counts.rules.toLocaleString("es")],
-        ["Hashes", (m) => m.counts.hashes.toLocaleString("es")],
-        ["Tamaño", (m) => tamano(m.files.reduce((suma, f) => suma + f.size, 0))],
-      ];
-
-      function tamano(bytes) {
-        const unidades = ["B", "KB", "MB", "GB"];
-        let i = 0;
-        while (bytes >= 1024 && i < unidades.length - 1) {
-          bytes /= 1024;
-          i += 1;
-        }
-        return `${bytes.toFixed(i === 0 ? 0 : 1)} ${unidades[i]}`;
-      }
-
-      fetch("db/stable/manifest.json")
-        .then((respuesta) => (respuesta.ok ? respuesta.json() : Promise.reject(respuesta.status)))
-        .then((manifiesto) => {
-          destino.innerHTML = filas
-            .map(([nombre, valor]) => `<div><dt>${nombre}</dt><dd>${valor(manifiesto)}</dd></div>`)
-            .join("");
-        })
-        .catch(() => {
-          destino.innerHTML =
-            '<p class="vacio">Todavía no hay ningún paquete publicado en este canal.</p>';
-        });
-    </script>
   </body>
 </html>
