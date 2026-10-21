@@ -15,20 +15,6 @@
         "type": "local",
         "command": ["duckduckgo-mcp-server"]
       },
-      // Ingenieria inversa: analizar muestras de malware y auditar que tan
-      // dificil es revertir nuestro propio binario.
-      "rea": {
-        "type": "local",
-        "command": [
-          // Rutas de esta maquina; ajustalas a la tuya.
-          "/home/jalkhov/.nvm/versions/node/v24.18.0/bin/rea",
-          "mcp"
-        ],
-        "environment": {
-          "GHIDRA_INSTALL_DIR": "/home/jalkhov/.local/opt/ghidra_12.1.4_PUBLIC",
-          "JAVA_HOME": "/home/jalkhov/.local/opt/jdk21"
-        }
-      },
       // Documentacion actualizada de librerias (windows-rs, yara-x, tokio...).
       // El endpoint publico no usa OAuth; oauth:false evita el intento de descubrimiento.
       "context7": {
@@ -53,4 +39,7 @@
   //   playwright  -> no aplica (no hay UI web).
   //   mobile-mcp  -> no aplica.
   //   aseprite    -> no aplica (no hay arte de juego).
+  //   rea         -> se retiro al dejar de tener la ingenieria inversa como
+  //                  objetivo: el proyecto es publico y GPL, y las muestras no
+  //                  se ejecutan nunca, asi que analizarlas a mano no hace falta.
 }

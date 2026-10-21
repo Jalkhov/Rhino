@@ -75,20 +75,17 @@ de los antivirus comerciales.
 
 ## Lenguaje: Rust
 
-Elegido sobre Go por cuatro razones que atacan directo los objetivos del proyecto:
+Elegido sobre Go por tres razones que atacan directo los objetivos del proyecto:
 
-1. **Eficiencia real:** memoria segura sin recolector de basura. No hay pausas
-   *stop-the-world*, lo que importa en un servicio que escanea archivos en tiempo real.
-   Huella y latencia predecibles.
-2. **Resistencia a ingeniería inversa:** un binario Rust con `strip` + LTO pierde casi
-   toda su metadata. Go reconstruye nombres de funciones y tipos desde su propia
-   metadata de runtime, lo que facilita revertir el binario. Rust eleva la barrera de
-   los intentos más básicos.
-3. **Ecosistema de seguridad nativo:** [YARA-X](https://github.com/VirusTotal/yara-x)
+1. **Eficiencia y seguridad de memoria a la vez:** memoria segura sin recolector de basura.
+   No hay pausas *stop-the-world*, lo que importa en un servicio que escanea archivos en
+   tiempo real, y ninguna de las clases de fallo de memoria que dominan los CVE de los
+   antivirus (casi todos, parsers de formatos). Huella y latencia predecibles.
+2. **Ecosistema de seguridad nativo:** [YARA-X](https://github.com/VirusTotal/yara-x)
    (reescritura de YARA hecha en Rust por VirusTotal, madura y en producción) es el
    motor de firmas de facto y ya está en Rust. Con Go habría que usar CGo, que complica
    la compilación cruzada.
-4. **Acceso a Windows:** [`windows-rs`](https://github.com/microsoft/windows-rs), de
+3. **Acceso a Windows:** [`windows-rs`](https://github.com/microsoft/windows-rs), de
    Microsoft, da bindings seguros a toda la API Win32. Y a diferencia de Go, Rust puede
    escribir drivers de kernel (minifiltros) si una fase futura lo requiere.
 
@@ -519,7 +516,7 @@ Las piezas de terceros conservan su licencia: YARA-X (BSD-3-Clause), las reglas 
 ## Entorno de OpenCode
 
 `opencode.jsonc` declara los MCP útiles para el proyecto: `context-mode`,
-`ddg-search`, `rea` (ingeniería inversa) y `context7` (documentación de librerías).
+`ddg-search` (búsqueda web) y `context7` (documentación de librerías).
 
 ## Método de trabajo
 
@@ -551,7 +548,10 @@ avisar. Lo que no se ha medido no se afirma.
   audio y vídeo. 26 s → 11,75 s en `/usr/bin`; el precio es más CPU total y 180-200 MB con
   reglas. Falta confirmarlo en Windows con el binario nuevo.
 - [ ] **Fase 7 (la siguiente)** — Protección en tiempo real, en modo usuario y sin driver.
-- [ ] **Fase 8** — Endurecimiento anti-ingeniería-inversa y empaquetado.
+- [ ] **Fase 8** — Integridad y cadena de confianza: no aceptar un paquete más antiguo
+  que el instalado (uno viejo, válidamente firmado, apagaría detecciones), firmar el
+  ejecutable cuando haya programa de firma para código abierto, publicar el SHA-256 de cada
+  release y tener un plan para la clave privada (rotación y qué hacer si se filtra).
 
 Tareas transversales, que se hacen una vez:
 
@@ -595,8 +595,10 @@ Tareas transversales, que se hacen una vez:
   *std*, no las herramientas de compilación en 32 bits. Los binarios de 32 bits se
   siguen construyendo, pero hay que **compilar cruzado desde Linux/64 bits** (que es
   justo el plan de desarrollo definido).
-- La mitigación de ingeniería inversa es una barrera, no una garantía: ningún lenguaje
-  vuelve un binario irrevertible.
+- **Cualquiera puede compilar y publicar un fork** con el mismo nombre: el código es libre,
+  así que el vector ya no es revertir el binario sino confundir al usuario. La defensa es que
+  las releases sean identificables: SHA-256 publicado en cada una, descarga solo desde este
+  repositorio y, cuando se pueda, el ejecutable firmado.
 
 - **Un análisis del equipo entero tarda.** A 77,5 archivos por segundo medidos en Windows,
   medio millón de archivos son casi dos horas, y el coste lo pone el contenido. Se puede usar
