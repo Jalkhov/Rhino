@@ -76,5 +76,7 @@ las filas del riel. El contraste lo comprueba `crates/rhino-app/tests/contraste.
 
 ## Siguiente rebanada
 
-Fase 5d (teclado, foco, pie de estado y ventana que quepa a 150 %) y 5e (Windows de
-verdad). El plan completo, con criterios de aceptación, está en `REPORT_1017.md`.
+Fase 5e: números en Windows (RAM, archivos por segundo, falsos positivos sobre programas
+instalados). Queda aparte la ventana a 150 %: pide una referencia de 900x480, recalcular
+riel, rellenos y columnas, y envolver Ajustes en un Flickable. El plan completo, con
+criterios de aceptación, está en `REPORT_1017.md`.
