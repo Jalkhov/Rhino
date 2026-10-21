@@ -528,19 +528,6 @@ fn build_report(
 fn pe_findings(image: &PeFile) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    for section in image.packer_sections() {
-        findings.push(Finding {
-            layer: Layer::Heuristic,
-            name: "PE-Packer".to_string(),
-            detail: format!(
-                "la sección «{}» es característica de un empaquetador",
-                section.name
-            ),
-            verdict: Verdict::Suspicious,
-            rule: None,
-        });
-    }
-
     for section in image.writable_executable_sections() {
         findings.push(Finding {
             layer: Layer::Heuristic,
@@ -624,8 +611,8 @@ mod tests {
     use super::*;
     use crate::HashList;
     use crate::corpus::{
-        EICAR_TEXT, benign_pe, benign_text, eicar, eicar_sha256, packed_pe, truncated_pe,
-        writable_executable_pe,
+        CHARACTERISTICS_WRITABLE_CODE, EICAR_TEXT, benign_pe, benign_text, eicar, eicar_sha256,
+        packed_pe, pe_with_section, truncated_pe, writable_executable_pe,
     };
 
     /// Regla mínima propia: prueba la capa 2 sin descargar YARA Forge.
@@ -700,16 +687,23 @@ rule rhino_test_eicar {
     }
 
     #[test]
-    fn packer_sections_are_suspicious() {
+    fn a_packed_file_is_not_suspicious_by_itself() {
+        // Un binario empaquetado con UPX no dice nada: AIDA64, GPU-Z y el propio
+        // Detect It Easy lo están. Medido en un C:\Program Files real.
         let report = scan_bytes("empaquetado.exe", &packed_pe(), &Database::empty());
 
-        assert_eq!(report.verdict, Verdict::Suspicious);
-        assert_eq!(report.findings.len(), 2);
-        assert!(
-            report.findings.iter().all(|finding| {
-                finding.layer == Layer::Heuristic && finding.name == "PE-Packer"
-            })
-        );
+        assert_eq!(report.verdict, Verdict::Clean);
+        assert!(report.findings.is_empty());
+    }
+
+    #[test]
+    fn a_driver_init_section_is_not_suspicious() {
+        // La `INIT` de un controlador es W+X a propósito: el cargador la usa al
+        // arrancar y la descarta.
+        let image = pe_with_section("INIT", CHARACTERISTICS_WRITABLE_CODE);
+        let report = scan_bytes("controlador.sys", &image, &Database::empty());
+
+        assert_eq!(report.verdict, Verdict::Clean);
     }
 
     #[test]

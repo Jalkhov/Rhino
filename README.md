@@ -207,36 +207,49 @@ Escanear `/usr/bin` (2394 archivos) tarda 26 s con reglas y 9 s sin ellas.
 
 ### Medido en Windows
 
-Primera ejecución real, en Windows 10 sobre una máquina virtual con **4 GB de RAM y una
-sola CPU**, con el binario x86 de 32 bits en release (bajo WoW64, porque el Windows de la
-máquina virtual es de 64 bits):
+Banco del núcleo en la máquina virtual (Windows 10, **4 GB de RAM, 4 vCPU**), con el binario
+x86 de 32 bits en release (bajo WoW64, porque el Windows de la máquina virtual es de 64 bits)
+y el paquete real de 5137 reglas, sobre `C:\Program Files`:
 
 | Dato | Medido |
 | --- | --- |
-| Memoria de trabajo de Rhino durante el análisis | **53 MB** (55.554.048 bytes), estable |
-| Memoria de la máquina virtual entera (Windows + Rhino) | 33 % de 4000 MB |
-| Archivos por segundo | 9,3 en `C:\Program Files` (5965 archivos); 1,2 en la raíz de `C:` |
-| Archivos que no se pudieron leer | 2 de 5965, contados y enseñados |
+| Archivos | 4413 (1088 ejecutables PE) en 56,96 s |
+| Velocidad | **77,5 archivos por segundo** |
+| Memoria de pico durante el análisis | **225 MB** |
+| Resultado | 0 maliciosos, **3 sospechosos**, 4410 limpios |
 | Escala del sistema | respetada: al 125 % la ventana mide 1222 px físicos |
 
-La protección se descargó e instaló desde el sitio sin reiniciar la aplicación, y el
-teclado (Tab, Shift+Tab e Intro con el foco visible) funciona en el invitado.
+Las cifras que había antes en esta tabla (9,3 archivos por segundo y 53 MB) eran de la misma
+máquina con **una sola CPU y un solo hilo**, así que no son comparables: al pasar a 4 vCPU y
+4 hilos cambiaron las dos cosas a la vez. La ganancia del código, aislada, está en la sección
+siguiente.
 
-Los archivos por segundo dependen del tamaño, no del número: la pasada sobre
-`C:\Program Files` iba a 9,3 archivos por segundo, y otra que empezó por la raíz de `C:` y
-se topó con lo borrado de la Papelera de reciclaje bajó a 1,2. El coste lo pone el
-contenido (el hash y las reglas lo leen), así que cuatro archivos de varios gigabytes
-tardan más que diez mil ejecutables pequeños. De ahí que la fase 6 tenga dos palancas:
-repartir entre hilos y saltarse lo que no puede ejecutarse.
+La protección se descargó e instaló desde el sitio sin reiniciar la aplicación, y el teclado
+(Tab, Shift+Tab e Intro con el foco visible) funciona en el invitado.
 
-Falsos positivos en esa pasada: **4 de 5965** archivos. El primero, `WallaceSrc.exe` de las
-prácticas de Ghidra, lo marcaba la heurística por la sección `.textbss`, que crea el
-enlazador de MSVC y que el cargador rellena de ceros; ya no cuenta. Los otros tres están
-sin revisar.
+El coste lo pone el contenido, no el número de archivos: esta pasada va a 77,5 por segundo en
+`C:\Program Files`, y otra que empezó por la raíz de `C:` y se topó con lo borrado de la
+Papelera de reciclaje bajó a 1,2. Cuatro archivos de varios gigabytes tardan más que diez mil
+ejecutables pequeños.
 
-El peor caso medido antes del reparto entre hilos era de 115 MB; con cuatro archivos en
-vuelo la referencia nueva es de 180 a 200 MB (ver abajo). Sigue sin ser un tope que haya que
-respetar.
+**Falsos positivos: 3 de 4413** (0,07 %). No fue siempre así: la primera pasada con la
+heurística anterior marcaba **65**, y no eran 65 archivos raros sino dos reglas mal
+calibradas:
+
+- El **nombre de una sección de empaquetador** marcaba por sí solo. AIDA64, GPU-Z, el
+  instalador de Partition Wizard y el propio Detect It Easy están empaquetados con UPX,
+  MPRESS o Enigma, y que un binario esté comprimido no dice nada del contenido. Ahora ese
+  nombre solo no marca.
+- La heurística de **secciones ejecutables y escribibles** contaba la `INIT` de los
+  controladores (28 de los 65), que Windows hace W+X a propósito para usarla al arrancar y
+  descartarla, y las secciones propias de UPX. Ahora se excluyen las que son W+X por
+  construcción: las del enlazador (`.textbss`), las de un empaquetador y `INIT`.
+
+Los tres que quedan son otro asunto y se explican: `version.dll` y `UninstallToolHelper.exe`
+llevan la sección de código W+X, y el segundo además tiene secciones de nombre aleatorio
+(`z0tyg8go`, `oc7esfle`), que es la huella de un instalador protegido; `bdcam.exe` (Bandicam)
+lleva una sección propia W+X. Dos son software legítimo protegido y uno es una DLL con el
+código modificable: el tipo de archivo que la heurística debe seguir enseñando.
 
 ### Reparto entre hilos y corte por tipo
 
@@ -268,8 +281,8 @@ reglas son 12 MB. En un equipo de 4 GB sigue siendo un 5 %, pero es la cifra nue
 Cargar el paquete real cuesta 1,1 s en release, así que la carga no se mueve al hilo de
 análisis: los 20 s del arranque en depuración son de compilar las reglas en ese perfil.
 
-Falta confirmar estas cifras en Windows: la máquina virtual tiene ahora 4 vCPU y los 9,3
-archivos por segundo de la tabla anterior son de un solo hilo.
+Confirmado en Windows: el banco de arriba corrió con cuatro hilos y el corte, y de ahí sale
+la cifra de 77,5 archivos por segundo.
 
 ### Actualizador
 
@@ -356,7 +369,7 @@ aprobada antes de conectar el núcleo y se conservan como referencia del diseño
 
 ## Pruebas
 
-**119 pruebas** con `cargo test --workspace`: 12 de la aplicación, 2 de contraste, 93 del
+**120 pruebas** con `cargo test --workspace`: 12 de la aplicación, 2 de contraste, 94 del
 núcleo, 6 de propiedades, 5 de integración y 1 del manifiesto del paquete.
 
 - **Unitarias:** obligatorias. Con `#[test]`, junto al código, vía `cargo test`.
@@ -535,7 +548,6 @@ Tareas transversales, que se hacen una vez:
 3. **Anchos de botón por variante, no a mano.** Hoy hay ocho anchos escritos a mano y la
    aritmética se rehace cada vez que sube la escala tipográfica. Dos o tres variantes
    cerradas con su tabla de anchos revisada una vez.
-4. **Los tres falsos positivos** de la pasada por `C:\Program Files` siguen sin revisar.
 
 ## Riesgos conocidos
 
@@ -568,8 +580,10 @@ Tareas transversales, que se hacen una vez:
 - La mitigación de ingeniería inversa es una barrera, no una garantía: ningún lenguaje
   vuelve un binario irrevertible.
 
-- **El análisis es secuencial y lento.** 9,3 archivos por segundo en Windows, y el coste lo
-  pone el contenido, no el número de archivos: un equipo entero son horas. Es la fase 6.
+- **Un análisis del equipo entero tarda.** A 77,5 archivos por segundo medidos en Windows,
+  medio millón de archivos son casi dos horas, y el coste lo pone el contenido. Se puede usar
+  el equipo mientras tanto y se puede detener, pero conviene no prometer «unos minutos» para
+  un disco lleno.
 - **La ventana no entra a 150 %.** 980x680 lógicos son 1470x1020 físicos; en un portátil de
   1366x768 con esa escala pide una referencia de unos 900x480, recalcular riel, rellenos y
   columnas del historial, y envolver Ajustes en un `Flickable`.

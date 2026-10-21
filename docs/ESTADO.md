@@ -50,11 +50,13 @@ imágenes, audio y vídeo).
 
 ## Qué está roto o sin probar
 
-- **Las cifras de Windows son de un solo hilo.** La máquina virtual tiene ahora 4 vCPU, así
-  que los 9,3 archivos por segundo del README hay que volver a medirlos con el binario de
-  la fase 6, que todavía no se ha compilado para Windows.
-- **Falsos positivos sin terminar de medir**: en 5965 archivos de `C:\Program Files` marcó 4.
-  Uno era la sección `.textbss` del enlazador (corregido); los otros tres están sin revisar.
+- **El binario de la interfaz para Windows está por recompilar** con la heurística corregida.
+  El banco del núcleo ya está medido con ella: `C:\Program Files`, 4413 archivos en 56,96 s
+  (77,5 por segundo), 225 MB de pico, 0 maliciosos y **3 sospechosos**.
+- **Los falsos positivos bajaron de 65 a 3, y dos de los tres son software legítimo
+  protegido** (`bdcam.exe` de Bandicam y `UninstallToolHelper.exe`, ambos con secciones W+X
+  propias o de nombre aleatorio). El tercero, `version.dll`, tiene el código modificable y es
+  el tipo de archivo que la heurística debe seguir enseñando.
 - **El lector de pantalla no se ha probado**: el árbol se vuelca y se compara contra la base
   dorada, pero nadie lo ha oído hablar; aquí no hay sesión AT-SPI. El volcado tampoco prueba
   el orden de tabulación ni el aro de foco.

@@ -79,16 +79,17 @@ impl PeFile {
 
     /// Secciones ejecutables y escribibles a la vez (posible automodificación).
     ///
-    /// Las que crea el enlazador quedan fuera: son W+X por construcción y las
-    /// lleva cualquier programa legitimo compilado así. Marcarlas convertiría la
-    /// heurística en un generador de falsos positivos.
+    /// Las que lo son por construcción quedan fuera (ver
+    /// `is_expected_writable_executable`): las del enlazador, la `INIT` de los
+    /// controladores y las de un empaquetador. Marcarlas convertía la heurística
+    /// en un generador de falsos positivos.
     pub fn writable_executable_sections(&self) -> Vec<&PeSection> {
         self.sections
             .iter()
             .filter(|section| {
                 section.is_executable()
                     && section.is_writable()
-                    && !is_linker_section_name(&section.name)
+                    && !is_expected_writable_executable(&section.name)
             })
             .collect()
     }
@@ -106,6 +107,21 @@ pub fn is_packer_section_name(name: &str) -> bool {
     PACKER_SECTION_NAMES
         .iter()
         .any(|known| known.eq_ignore_ascii_case(name))
+}
+
+/// ¿La sección es W+X por diseño, sin decir nada del contenido?
+///
+/// Además de las del enlazador: `INIT` es la sección de arranque de un
+/// controlador, ejecutable y escribible a propósito (el cargador la usa y la
+/// descarta), y las de un empaquetador son el búfer donde se descomprime.
+/// Medido en un `C:\Program Files` real: de 65 falsos positivos, 28 eran `.sys`
+/// con `INIT` y 64 de los motivos, secciones `UPX0`/`UPX1`. Que un binario esté
+/// empaquetado no es señal de nada: AIDA64, GPU-Z y el propio Detect It Easy
+/// lo están.
+fn is_expected_writable_executable(name: &str) -> bool {
+    is_linker_section_name(name)
+        || is_packer_section_name(name)
+        || name.eq_ignore_ascii_case("INIT")
 }
 
 /// Lee las cabeceras de un PE.
