@@ -16,6 +16,14 @@ const MAX_SECTIONS: u16 = 96;
 const SECTION_MEM_EXECUTE: u32 = 0x2000_0000;
 const SECTION_MEM_WRITE: u32 = 0x8000_0000;
 
+/// Secciones que crea el enlazador y que no dicen nada del contenido.
+///
+/// `.textbss` existe solo en binarios compilados con enlazado incremental (MSVC):
+/// es ejecutable y escribible en la cabecera, pero el cargador la rellena de ceros
+/// y nunca trae código del archivo. Medido como falso positivo en Windows:
+/// `WallaceSrc.exe`, de las prácticas de Ghidra, la lleva.
+pub const LINKER_SECTION_NAMES: &[&str] = &[".textbss"];
+
 /// Nombres de sección típicos de empaquetadores y compresores de ejecutables.
 pub const PACKER_SECTION_NAMES: &[&str] = &[
     "UPX0", "UPX1", "UPX2", ".UPX0", ".UPX1", ".aspack", ".ASPack", ".adata", ".themida", ".vmp0",
@@ -70,12 +78,27 @@ impl PeFile {
     }
 
     /// Secciones ejecutables y escribibles a la vez (posible automodificación).
+    ///
+    /// Las que crea el enlazador quedan fuera: son W+X por construcción y las
+    /// lleva cualquier programa legitimo compilado así. Marcarlas convertiría la
+    /// heurística en un generador de falsos positivos.
     pub fn writable_executable_sections(&self) -> Vec<&PeSection> {
         self.sections
             .iter()
-            .filter(|section| section.is_executable() && section.is_writable())
+            .filter(|section| {
+                section.is_executable()
+                    && section.is_writable()
+                    && !is_linker_section_name(&section.name)
+            })
             .collect()
     }
+}
+
+/// ¿El nombre corresponde a una sección que crea el enlazador?
+pub fn is_linker_section_name(name: &str) -> bool {
+    LINKER_SECTION_NAMES
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(name))
 }
 
 /// ¿El nombre corresponde a una sección de empaquetador conocida?
@@ -193,6 +216,14 @@ mod tests {
         let image = pe_with_section("UPX0", CHARACTERISTICS_CODE);
         let parsed = parse(&mut Cursor::new(&image)).unwrap().unwrap();
         assert_eq!(parsed.packer_sections().len(), 1);
+    }
+
+    #[test]
+    fn a_linker_section_is_not_reported_as_writable_and_executable() {
+        let image = pe_with_section(".textbss", CHARACTERISTICS_WRITABLE_CODE);
+        let parsed = parse(&mut Cursor::new(&image)).unwrap().unwrap();
+        assert_eq!(parsed.sections.len(), 1);
+        assert!(parsed.writable_executable_sections().is_empty());
     }
 
     #[test]
