@@ -121,6 +121,7 @@ const PAIRS: &[(&str, &str, f64, &str)] = &[
     ("ok-text", "card", 4.5, "verde como texto"),
     // Marcas finas y componentes (mínimo 3:1).
     ("accent-mark", "card", 3.0, "borde de la opción elegida"),
+    ("accent-mark", "rail", 3.0, "aro de foco sobre el riel"),
     ("accent-mark", "ground", 3.0, "barra de progreso"),
     (
         "accent-mark",

@@ -91,7 +91,16 @@ component AppButton inherits Rectangle {
     in property <bool> primary: true;
     in property <bool> quiet: false;
     in property <bool> enabled: true;
+    // Para lo que el texto visible no dice: en una lista de filas, «Recuperar»
+    // suena igual en todas y el nombre del archivo lo desambigua.
+    in property <string> description: "";
     callback clicked;
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-description: root.description;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
 
     height: 38px;
     border-radius: Theme.r-sm;
@@ -101,8 +110,12 @@ component AppButton inherits Rectangle {
               : root.quiet ? (touch.has-hover ? Theme.control : transparent)
               : root.primary ? (touch.has-hover ? Theme.accent-deep : Theme.accent)
               : (touch.has-hover ? Theme.control-hover : Theme.control);
-    border-width: root.primary && !root.quiet ? 0px : 1px;
-    border-color: Theme.rule;
+    // El aro de foco es el propio filete, que se pinta hacia dentro: ni el alto ni
+    // la posición de la etiqueta cambian. Sobre el relleno (azul o gris) el aro va
+    // en blanco porque accent-mark sobre ese relleno no llega a 3:1.
+    border-width: button-focus.has-focus ? 2px : (root.primary && !root.quiet ? 0px : 1px);
+    border-color: !button-focus.has-focus ? Theme.rule
+        : (root.quiet ? Theme.accent-mark : Theme.ink);
 
     HorizontalLayout {
         alignment: center;
@@ -129,7 +142,26 @@ component AppButton inherits Rectangle {
 
     touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { if root.enabled { root.clicked(); } }
+        // El clic también da el foco: si no, el aro se quedaría en el control que
+        // el teclado tocó por última vez y Enter actuaría allí.
+        clicked => { button-focus.focus(); if root.enabled { root.clicked(); } }
+    }
+
+    // Intro y Espacio pulsan; lo demás se rechaza para que Tab y las flechas
+    // sigan siendo del sistema. Deshabilitado no entra en el orden de tabulación.
+    button-focus := FocusScope {
+        enabled: root.enabled;
+        // Sin esto el scope se queda el clic para darse el foco y el botón no se
+        // pulsa: el ratón deja de funcionar. El foco se alcanza con Tab.
+        focus-on-click: false;
+
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
     }
 }
 
@@ -188,8 +220,23 @@ component NavRow inherits Rectangle {
     in property <string> badge: "";
     callback clicked;
 
+    // La primera fila es la que recibe el foco al abrir la ventana (ver MainWindow).
+    forward-focus: focus-scope;
+
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-description: root.badge == "" ? ""
+        : "Archivos que mirar: " + root.badge;
+    accessible-item-selectable: true;
+    accessible-item-selected: root.current;
+    accessible-action-default => { root.clicked(); }
+
     height: 38px;
     background: root.current ? Theme.accent : (touch.has-hover ? #242E35 : transparent);
+    // Aro de foco como filete interior: no ocupa alto ni desplaza nada. En la fila
+    // elegida (rellena de azul) va en blanco: accent-mark sobre el azul no se lee.
+    border-width: focus-scope.has-focus ? 2px : 0px;
+    border-color: root.current ? Theme.ink : Theme.accent-mark;
 
     HorizontalLayout {
         padding-left: 16px;
@@ -236,7 +283,21 @@ component NavRow inherits Rectangle {
 
     touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        clicked => { focus-scope.focus(); root.clicked(); }
+    }
+
+    // Mismo trato que un botón: Intro y Espacio activan; el resto se rechaza
+    // para no quitarle Tab ni las flechas a nadie.
+    focus-scope := FocusScope {
+        focus-on-click: false; // el clic es del TouchArea; el foco, de Tab
+
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
     }
 }
 
@@ -297,6 +358,13 @@ component ScopeCard inherits Rectangle {
     in property <string> hint;
     in property <bool> current: false;
     callback clicked;
+
+    accessible-role: radio-button;
+    accessible-label: root.title;
+    accessible-description: root.hint;
+    accessible-checkable: true;
+    accessible-checked: root.current;
+    accessible-action-default => { root.clicked(); }
 
     height: 104px;
     border-radius: Theme.r-md;
@@ -366,7 +434,33 @@ component ScopeCard inherits Rectangle {
 
     touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        clicked => { card-focus.focus(); root.clicked(); }
+    }
+
+    // El aro va por dentro del filete de «elegida» para que se vean los dos: uno
+    // dice cuál está elegida y el otro dónde está el teclado.
+    Rectangle {
+        visible: card-focus.has-focus;
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
+        border-radius: Theme.r-sm;
+        border-width: 2px;
+        border-color: Theme.accent-mark;
+        background: transparent;
+    }
+
+    card-focus := FocusScope {
+        focus-on-click: false; // el clic es del TouchArea; el foco, de Tab
+
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == Key.Space) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
     }
 }
 
@@ -432,6 +526,7 @@ component FindingRow inherits Rectangle {
                     AppButton {
                         width: 146px;
                         label: "Poner a salvo";
+                        description: root.name;
                         clicked => { root.quarantine(); }
                     }
 
@@ -439,6 +534,7 @@ component FindingRow inherits Rectangle {
                         width: 104px;
                         quiet: true;
                         label: "Ignorar";
+                        description: root.name;
                         clicked => { root.ignore(); }
                     }
                 }
@@ -466,6 +562,7 @@ component FindingRow inherits Rectangle {
             height: 32px;
             quiet: true;
             label: root.expanded ? "Ocultar la comprobación" : "Ver la comprobación";
+            description: root.name;
             clicked => { root.toggle(); }
         }
 
@@ -537,6 +634,7 @@ component SafeRow inherits Rectangle {
                     width: 150px;
                     glyph: Icons.rotate;
                     label: "Recuperar";
+                    description: root.name;
                     clicked => { root.restore(); }
                 }
 
@@ -544,6 +642,7 @@ component SafeRow inherits Rectangle {
                     width: 96px;
                     quiet: true;
                     label: "Borrar";
+                    description: root.name;
                     clicked => { root.erase(); }
                 }
             }
@@ -1193,6 +1292,7 @@ component IgnoredRow inherits Rectangle {
                 primary: false;
                 quiet: true;
                 label: "Dejar de ignorar";
+                description: root.name;
                 clicked => { root.stop(); }
             }
         }
@@ -1356,6 +1456,9 @@ export component MainWindow inherits Window {
     width: 980px;
     height: 680px;
     background: Theme.ground;
+    // Al abrir, el foco empieza en «Inicio»: Tab nunca debe caer primero en un
+    // botón que dispare un análisis. Se encadena al FocusScope de la fila.
+    forward-focus: inicio-row;
 
     // Un solo sitio donde se fija la tipografía: así ningún Text se queda con la
     // fuente del sistema ni con un tamaño suelto.
@@ -1504,7 +1607,7 @@ export component MainWindow inherits Window {
                 VerticalLayout {
                     spacing: 2px;
 
-                    NavRow {
+                    inicio-row := NavRow {
                         label: "Inicio";
                         glyph: Icons.home;
                         current: root.screen == 0;
@@ -1651,6 +1754,25 @@ export component MainWindow inherits Window {
                         font-size: Theme.t-xl;
                         font-weight: 600;
                         color: Theme.ink;
+                    }
+
+                    // Lo que acaba de pasar, en el encabezado y con el ancho
+                    // acotado: un mensaje largo se elide y no empuja al título.
+                    // La región viva hace que un lector de pantalla lo anuncie.
+                    Text {
+                        visible: root.status != "";
+                        x: parent.width - 28px - 320px;
+                        y: 16px;
+                        width: 320px;
+                        height: 28px;
+                        text: root.status;
+                        font-size: Theme.t-sm;
+                        color: Theme.ink-muted;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        accessible-role: text;
+                        accessible-live-region: polite;
                     }
                 }
 

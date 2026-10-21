@@ -6,11 +6,15 @@ edition.workspace = true
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rhino-core = { path = "../rhino-core" }
+# El acceso al sistema de accesibilidad (AccessKit en Windows, AT-SPI en Linux)
+# va como dependencia opcional de Slint y sin esta función las propiedades
+# `accessible-*` se compilan pero no llegan a ningún lector de pantalla.
 slint = { version = "1", default-features = false, features = [
     "std",
     "compat-1-2",
     "backend-winit",
     "renderer-software",
+    "accessibility",
 ] }
 # El selector nativo de archivos. En Linux el backend por defecto arrastra el
 # cliente de Wayland entero, que aquí no hace falta (la ventana es winit/X11 y
