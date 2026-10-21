@@ -121,7 +121,12 @@ fn install(
     let signature = String::from_utf8_lossy(&fetch(&agent, base, SIGNATURE_FILE)?).to_string();
     let manifest = db::verify_manifest(&manifest_bytes, &signature, key)?;
 
-    if db::installed_version(destination).as_deref() == Some(manifest.version.as_str()) {
+    // Una versión igual no se instala, y una más antigua tampoco: un paquete
+    // viejo, válidamente firmado, apagaría detecciones que ya tenemos. Las
+    // versiones son fechas `AAAA.MM.DD`, así que se comparan como texto.
+    if let Some(installed) = db::installed_version(destination)
+        && installed.as_str() >= manifest.version.as_str()
+    {
         remove(staging)?;
         return Ok(None);
     }
@@ -389,6 +394,24 @@ mod tests {
 
         assert!(matches!(error, UpdateError::Network(_)));
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn an_older_package_is_not_installed() {
+        // Un paquete viejo, válidamente firmado, apagaría detecciones que ya
+        // tenemos: se queda el que está.
+        let destination = fresh("rebobinado");
+        let nuevo = serve(package_files(TEST_SEED, "2026.10.18"));
+        update_signed_by(&nuevo, &destination, &public_key(TEST_SEED)).unwrap();
+
+        let viejo = serve(package_files(TEST_SEED, "2026.10.01"));
+        let version = update_signed_by(&viejo, &destination, &public_key(TEST_SEED)).unwrap();
+
+        assert_eq!(version, None);
+        assert_eq!(
+            db::installed_version(&destination).as_deref(),
+            Some("2026.10.18")
+        );
     }
 
     #[test]
