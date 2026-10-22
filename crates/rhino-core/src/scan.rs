@@ -205,9 +205,18 @@ fn rules_are_worth_reading(path: &Path) -> bool {
     let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
         return true;
     };
+    // Un archivo de reglas lleva los literales de sus reglas como datos, asi que
+    // se marca a si mismo al escanearlo con ellas. Medido con una coleccion de
+    // terceros (malware_analisys.yar): veintidos reglas. El hash y la heuristica
+    // PE se siguen calculando.
+    const RULE_SOURCES: [&str; 3] = ["yar", "yara", "yarc"];
+
     !MEDIA
         .iter()
         .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        && !RULE_SOURCES
+            .iter()
+            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
 }
 
 /// Ejecuta `work` aislando cualquier pánico y devolviendo su mensaje.
@@ -868,6 +877,10 @@ rule rhino_test_eicar {
 
     #[test]
     fn media_is_skipped_and_documents_are_not() {
+        // Un archivo de reglas se marca a si mismo: no se pasa por las reglas.
+        for name in ["coleccion.yar", "reglas.YARA", "paquete.yarc"] {
+            assert!(!rules_are_worth_reading(Path::new(name)), "{name}");
+        }
         for name in ["foto.png", "FOTO.PNG", "clip.mp4", "sonido.mp3"] {
             assert!(!rules_are_worth_reading(Path::new(name)), "{name}");
         }
