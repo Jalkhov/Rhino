@@ -405,6 +405,11 @@ fn scan_parallel(
     Ok(summary)
 }
 
+/// ¿La carpeta está dentro de los datos que guarda Rhino?
+fn is_own_data(directory: &Path) -> bool {
+    crate::paths::data_directory().is_ok_and(|data| directory.starts_with(data))
+}
+
 /// El paseo: recorre el árbol y entrega cada archivo a `on_file`.
 ///
 /// Los fallos de lectura y de listado se cuentan aquí; los de análisis, en quien
@@ -416,6 +421,15 @@ fn walk_files(
     on_failure: &mut dyn FnMut(),
 ) -> io::Result<ScanSummary> {
     let mut summary = ScanSummary::default();
+
+    // Los datos propios no se analizan. El paquete de reglas contiene los
+    // literales de las 5.137 reglas como datos, así que escanearlo con ellas
+    // mismas lo marca como malicioso; y lo que está apartado es malware por
+    // definición. Un análisis del equipo entero pasa por ahí, y en un equipo
+    // limpio eso es una insignia roja que asusta sin motivo.
+    if is_own_data(directory) {
+        return Ok(summary);
+    }
 
     for entry in fs::read_dir(directory)? {
         if stop.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
@@ -868,6 +882,15 @@ rule rhino_test_eicar {
         ] {
             assert!(rules_are_worth_reading(Path::new(name)), "{name}");
         }
+    }
+
+    #[test]
+    fn the_programs_own_data_is_not_scanned() {
+        let data = crate::paths::data_directory().expect("el equipo de pruebas tiene perfil");
+
+        assert!(is_own_data(&data.join("rhino-db")));
+        assert!(is_own_data(&data.join("apartados").join("algo.bin")));
+        assert!(!is_own_data(&std::env::temp_dir()));
     }
 
     #[test]
