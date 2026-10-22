@@ -157,6 +157,7 @@ Son dos pasos, porque Rhino es un `.exe` suelto y no tiene instalador:
 
 ## Documentación
 
+- [`CHANGELOG.md`](CHANGELOG.md) — qué cambió en cada versión, con su commit.
 - [`docs/motor.md`](docs/motor.md) — las capas de detección, de dónde salen las reglas, el
   paquete firmado, el actualizador, la robustez y las cifras de memoria y velocidad.
 - [`docs/interfaz.md`](docs/interfaz.md) — por qué Slint, las decisiones de diseño y la
