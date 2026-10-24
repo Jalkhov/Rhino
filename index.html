@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#1B2428" />
+    <title>Rhino — antivirus ligero para Windows</title>
+    <meta
+      name="description"
+      content="Antivirus gratuito y ligero para Windows 10 y 11, de 32 y 64 bits. Analiza cuando se lo pides, aparta lo sospechoso y no envía nada a ningún sitio."
+    />
+    <link rel="stylesheet" href="estilo.css" />
+  </head>
+  <body>
+    <a class="salto" href="#contenido">Saltar al contenido</a>
+
+    <header class="cabecera">
+      <div class="ancho cabecera-fila">
+        <a class="marca" href="#inicio" aria-label="Rhino, inicio">
+          <svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <span>Rhino</span>
+        </a>
+
+        <nav aria-label="Principal">
+          <ul class="navegacion">
+            <li><a href="#que-hace">Qué hace</a></li>
+            <li><a href="#cifras">Cifras</a></li>
+            <li><a href="#antes-de-abrir">Antes de abrirlo</a></li>
+            <li><a href="#descargar">Descargar</a></li>
+          </ul>
+        </nav>
+
+        <a class="boton boton-principal boton-corto" href="#descargar">Descargar</a>
+      </div>
+    </header>
+
+    <main id="contenido">
+      <section class="heroe" id="inicio">
+        <div class="ancho heroe-rejilla">
+          <div class="heroe-texto">
+            <p class="etiqueta">
+              <span class="punto" aria-hidden="true"></span>
+              Beta cerrada · Windows 10 y 11 · 32 y 64 bits
+            </p>
+
+            <h1>Un antivirus que no se nota</h1>
+
+            <p class="entrada">
+              Analiza lo que le pidas, te dice qué ha encontrado y por qué, y aparta lo
+              sospechoso sin borrarlo: lo recuperas cuando quieras. Sin cuentas y sin
+              telemetría.
+            </p>
+
+            <div class="acciones">
+              <a
+                class="boton boton-principal"
+                href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/rhino-0.1.0-beta3-x64.exe"
+              >
+                <svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+                Descargar para Windows
+              </a>
+              <a
+                class="boton boton-secundario"
+                href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/rhino-0.1.0-beta3-x86.exe"
+                >Versión de 32 bits</a
+              >
+            </div>
+
+            <p class="nota">
+              Unos 24,5 MB y 20,7 MB. El ejecutable todavía no está firmado:
+              <a href="#antes-de-abrir">mira cómo abrirlo</a>.
+            </p>
+
+            <p class="nota garantias">
+              Gratis, sin versión pro y sin venta cruzada. Código abierto bajo
+              <a href="https://github.com/Jalkhov/Rhino/blob/main/LICENSE">GPL-3.0</a>.
+            </p>
+          </div>
+
+          <figure class="maqueta-caja">
+            <div class="maqueta" aria-hidden="true">
+              <div class="m-riel">
+                <div class="m-marca">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+                    <path d="m9 12 2 2 4-4" />
+                  </svg>
+                  <span>Rhino</span>
+                </div>
+
+                <div class="m-fila m-activa">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+                    <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  </svg>
+                  Inicio
+                </div>
+                <div class="m-fila">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+                    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+                    <path d="M7 12h10" />
+                  </svg>
+                  Analizar
+                </div>
+                <div class="m-fila">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+                    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                    <path d="M10 9H8" />
+                    <path d="M16 13H8" />
+                    <path d="M16 17H8" />
+                  </svg>
+                  Archivos sospechosos
+                </div>
+                <div class="m-fila">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <rect width="20" height="5" x="2" y="3" rx="1" />
+                    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+                    <path d="M10 12h4" />
+                  </svg>
+                  Poner a salvo
+                </div>
+                <div class="m-fila">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M12 7v5l4 2" />
+                  </svg>
+                  Historial
+                </div>
+                <div class="m-fila">
+                  <svg class="icono" viewBox="0 0 24 24">
+                    <path d="M21 4h-7" />
+                    <path d="M10 4H3" />
+                    <path d="M21 12h-9" />
+                    <path d="M8 12H3" />
+                    <path d="M21 20h-5" />
+                    <path d="M12 20H3" />
+                    <path d="M14 2v4" />
+                    <path d="M8 10v4" />
+                    <path d="M16 18v4" />
+                  </svg>
+                  Ajustes
+                </div>
+              </div>
+
+              <div class="m-panel">
+                <p class="m-cabecera">Inicio</p>
+
+                <div class="m-tarjeta">
+                  <span class="m-visto">
+                    <svg class="icono" viewBox="0 0 24 24">
+                      <path d="m5 12 5 5 9-9" />
+                    </svg>
+                  </span>
+                  <p class="m-titulo">Tu equipo está en orden</p>
+                  <p class="m-sub">Según el último análisis</p>
+                  <span class="m-boton">Analizar todo el equipo</span>
+                </div>
+
+                <div class="m-pie">
+                  <div>
+                    <span class="m-dato">67.192</span>
+                    <span class="m-rotulo">archivos analizados</span>
+                  </div>
+                  <div>
+                    <span class="m-dato">5.137</span>
+                    <span class="m-rotulo">comprobaciones</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <figcaption>
+              La ventana de Rhino. El botón hace lo que dice: analiza cuando lo pulsas.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="seccion" id="que-hace">
+        <div class="ancho">
+          <h2>Lo que hace hoy</h2>
+          <p class="entrada-seccion">
+            Cuatro cosas, y ninguna promesa de más. Rhino no vigila el equipo en tiempo
+            real: analiza cuando se lo pides. Nada retenido para una versión de pago.
+          </p>
+
+          <ul class="rejilla-tarjetas">
+            <li class="tarjeta">
+              <span class="icono-caja" aria-hidden="true">
+                <svg class="icono" viewBox="0 0 24 24">
+                  <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </span>
+              <h3>Analiza lo que le pidas</h3>
+              <p>
+                Un archivo, una carpeta o todo el equipo. Puedes seguir usando el equipo
+                mientras analiza, y detenerlo cuando quieras.
+              </p>
+            </li>
+
+            <li class="tarjeta">
+              <span class="icono-caja" aria-hidden="true">
+                <svg class="icono" viewBox="0 0 24 24">
+                  <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+                  <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                  <path d="M12 18v-6" />
+                  <path d="M9 15h.01" />
+                  <path d="M15 15h.01" />
+                </svg>
+              </span>
+              <h3>Te dice qué ha encontrado</h3>
+              <p>
+                Cada hallazgo viene con la comprobación que lo detectó, su autor y su
+                origen. Si no hay comprobaciones cargadas, lo dice en vez de fingir que
+                miró.
+              </p>
+            </li>
+
+            <li class="tarjeta">
+              <span class="icono-caja" aria-hidden="true">
+                <svg class="icono" viewBox="0 0 24 24">
+                  <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" />
+                  <path d="m21 2-9.6 9.6" />
+                  <circle cx="7.5" cy="15.5" r="5.5" />
+                </svg>
+              </span>
+              <h3>Aparta sin borrar</h3>
+              <p>
+                Lo sospechoso se va a «Poner a salvo». Nada se borra de tu equipo: lo
+                devuelves cuando quieras.
+              </p>
+            </li>
+
+            <li class="tarjeta">
+              <span class="icono-caja" aria-hidden="true">
+                <svg class="icono" viewBox="0 0 24 24">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l4 2" />
+                </svg>
+              </span>
+              <h3>Deja constancia</h3>
+              <p>
+                Guarda el historial de cada análisis y actualiza la protección sin
+                reiniciar. Se maneja con el teclado y no necesita tarjeta gráfica.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="seccion" id="cifras">
+        <div class="ancho">
+          <h2>Medido, no prometido</h2>
+          <p class="entrada-seccion">
+            Las cifras salen de la máquina de pruebas del proyecto: un Windows 10 con 4 GB
+            de memoria y las 5.137 comprobaciones de la protección cargadas.
+          </p>
+
+          <ul class="cifras">
+            <li>
+              <p class="cifra"><span class="numero">77</span> <span class="unidad">archivos/s</span></p>
+              <p class="cifra-nota">
+                En Windows con 4 vCPU, repartiendo el análisis entre cuatro hilos.
+              </p>
+            </li>
+            <li>
+              <p class="cifra"><span class="numero">225</span> <span class="unidad">MB</span></p>
+              <p class="cifra-nota">
+                De pico durante el análisis, con las 5.137 comprobaciones cargadas.
+              </p>
+            </li>
+            <li>
+              <p class="cifra"><span class="numero">67.192</span></p>
+              <p class="cifra-nota">
+                Archivos en un análisis completo del equipo de pruebas.
+              </p>
+            </li>
+            <li>
+              <p class="cifra"><span class="numero">0</span></p>
+              <p class="cifra-nota">
+                Consultas a internet mientras analiza. La única conexión es la
+                actualización de la protección.
+              </p>
+            </li>
+          </ul>
+
+          <p class="nota nota-ancha">
+            Un disco muy lleno tarda más. Puedes seguir usando el equipo mientras analiza
+            y detenerlo cuando quieras.
+          </p>
+        </div>
+      </section>
+
+      <section class="seccion" id="antes-de-abrir">
+        <div class="ancho">
+          <h2>Antes de abrirlo</h2>
+          <p class="entrada-seccion">
+            El ejecutable <strong>todavía no está firmado</strong>, así que Windows
+            SmartScreen avisará la primera vez. Es lo normal en un proyecto que empieza:
+            el aviso no significa que el archivo esté dañado.
+          </p>
+
+          <div class="aviso">
+            <p class="aviso-titulo">Cómo pasar el aviso de Windows</p>
+            <ol class="pasos">
+              <li>Abre el archivo que has descargado.</li>
+              <li>
+                Cuando Windows diga que no reconoce la aplicación, pulsa
+                <strong>«Más información»</strong>.
+              </li>
+              <li>Después, pulsa <strong>«Ejecutar de todas formas»</strong>.</li>
+            </ol>
+          </div>
+
+          <h3>Comprueba que ha llegado entero</h3>
+          <p>
+            Si quieres estar seguro de que la descarga no se ha cortado ni cambiado,
+            compara su huella con la publicada en esa entrega:
+          </p>
+          <pre><code>Get-FileHash <span class="sin-cortar">.\rhino-0.1.0-beta3-x64.exe</span> <span class="sin-cortar">-Algorithm SHA256</span></code></pre>
+          <p class="nota">
+            El resultado tiene que coincidir con el
+            <a
+              href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/SHA256SUMS"
+              >SHA256SUMS</a
+            >
+            de la entrega. En la versión de 32 bits, cambia el nombre del archivo por
+            <code>rhino-0.1.0-beta3-x86.exe</code>.
+          </p>
+        </div>
+      </section>
+
+      <section class="seccion" id="descargar">
+        <div class="ancho">
+          <h2>Descargar la beta</h2>
+          <p class="entrada-seccion">
+            La misma aplicación para Windows de 64 y 32 bits. Si no sabes cuál es la
+            tuya, casi seguro que es la de 64 bits.
+          </p>
+
+          <div class="descargas">
+            <article class="descarga">
+              <h3>Windows de 64 bits</h3>
+              <p class="archivo"><code>rhino-0.1.0-beta3-x64.exe</code></p>
+              <p class="peso">24,5 MB</p>
+              <a
+                class="boton boton-principal boton-ancho"
+                href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/rhino-0.1.0-beta3-x64.exe"
+              >
+                <svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3v12" />
+                  <path d="m7 10 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+                Descargar (64 bits)
+              </a>
+            </article>
+
+            <article class="descarga">
+              <h3>Windows de 32 bits</h3>
+              <p class="archivo"><code>rhino-0.1.0-beta3-x86.exe</code></p>
+              <p class="peso">20,7 MB</p>
+              <a
+                class="boton boton-secundario boton-ancho"
+                href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/rhino-0.1.0-beta3-x86.exe"
+                >Descargar (32 bits)</a
+              >
+            </article>
+          </div>
+
+          <ul class="enlaces-fila">
+            <li>
+              <a
+                href="https://github.com/Jalkhov/Rhino/releases/download/v0.1.0-beta4/SHA256SUMS"
+                >Huellas SHA-256</a
+              >
+            </li>
+            <li><a href="https://github.com/Jalkhov/Rhino/releases">Todas las entregas</a></li>
+            <li>
+              <a href="https://github.com/Jalkhov/Rhino/blob/main/CHANGELOG.md"
+                >Cambios de cada versión</a
+              >
+            </li>
+          </ul>
+
+          <p class="nota nota-ancha">
+            Windows 10 y 11, de 32 o 64 bits. El mínimo que se apoya es Windows 10 de 32
+            bits con 4 GB de RAM; la versión de 32 bits también funciona en Windows de 64
+            bits. GPL-3.0: puedes usarlo, estudiarlo y compartirlo.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="pie">
+      <div class="ancho pie-rejilla">
+        <div>
+          <p class="pie-marca">
+            <svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+              <path d="m9 12 2 2 4-4" />
+            </svg>
+            Rhino
+          </p>
+          <p>
+            <strong>Nada sale del equipo.</strong> Rhino no envía rutas, nombres de
+            archivo, contenido ni telemetría. Lo único que cruza la red es la descarga de
+            la protección, que va firmada y se verifica antes de usarla.
+          </p>
+        </div>
+
+        <div>
+          <h2 class="pie-titulo">El proyecto</h2>
+          <ul class="pie-enlaces">
+            <li><a href="https://github.com/Jalkhov/Rhino">Código en GitHub</a></li>
+            <li>
+              <a href="https://github.com/Jalkhov/Rhino/blob/main/CHANGELOG.md">Cambios</a>
+            </li>
+            <li><a href="https://github.com/Jalkhov/Rhino/releases">Entregas</a></li>
+            <li>
+              <a href="https://github.com/Jalkhov/Rhino/blob/main/LICENSE">Licencia GPL-3.0</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
