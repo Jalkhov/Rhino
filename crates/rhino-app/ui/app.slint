@@ -601,8 +601,11 @@ component SafeRow inherits Rectangle {
     in property <string> name;
     in property <string> where;
     in property <string> when;
+    in property <bool> confirming: false;
     callback restore;
     callback erase;
+    callback ask-erase;
+    callback cancel-erase;
 
     height: 64px;
     background: Theme.card;
@@ -622,12 +625,30 @@ component SafeRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
 
-            Text { text: root.name; font-size: Theme.t-md; color: Theme.ink; overflow: elide; }
-            Text { text: root.where + " · apartado el " + root.when; font-size: Theme.t-xs; color: Theme.ink-muted; overflow: elide; }
+            // Alturas explicitas y ramas `if`, no `visible`: en un layout un elemento
+            // invisible sigue ocupando su hueco, y sin altura fija el sobrante se
+            // reparte entre los textos y cada uno se dibuja pegado a su cima (regla 4).
+            Text { text: root.name; font-size: Theme.t-md; color: Theme.ink; overflow: elide; height: 20px; }
+
+            if !root.confirming : Text {
+                text: root.where + " · apartado el " + root.when;
+                font-size: Theme.t-xs;
+                color: Theme.ink-muted;
+                overflow: elide;
+                height: 18px;
+            }
+
+            if root.confirming : Text {
+                text: "¿Seguro? Es para siempre.";
+                font-size: Theme.t-sm;
+                color: Theme.ink-soft;
+                overflow: elide;
+                height: 19px;
+            }
         }
 
         Mid {
-            HorizontalLayout {
+            if !root.confirming : HorizontalLayout {
                 spacing: 10px;
 
                 AppButton {
@@ -643,7 +664,28 @@ component SafeRow inherits Rectangle {
                     quiet: true;
                     label: "Borrar";
                     description: root.name;
+                    clicked => { root.ask-erase(); }
+                }
+            }
+
+            // Borrar es para siempre: se pregunta en la propia fila, sin ventana
+            // encima y con el nombre a la vista, como en «Quitar Rhino».
+            if root.confirming : HorizontalLayout {
+                spacing: 10px;
+
+                AppButton {
+                    width: 120px;
+                    label: "Sí, borrar";
+                    description: root.name;
                     clicked => { root.erase(); }
+                }
+
+                AppButton {
+                    width: 104px;
+                    primary: false;
+                    label: "Cancelar";
+                    description: root.name;
+                    clicked => { root.cancel-erase(); }
                 }
             }
         }
@@ -989,6 +1031,10 @@ component SafeScreen inherits Rectangle {
     callback restore(int);
     callback erase(int);
 
+    // Fila que espera confirmacion; -1 cuando ninguna. Se vuelve a -1 al recuperar
+    // o borrar porque los indices de la lista se desplazan.
+    in-out property <int> confirming-erase: -1;
+
     VerticalLayout {
         padding: 28px;
         spacing: 12px;
@@ -1015,8 +1061,11 @@ component SafeScreen inherits Rectangle {
                         name: item.name;
                         where: item.where;
                         when: item.when;
-                        restore => { root.restore(index); }
-                        erase => { root.erase(index); }
+                        confirming: root.confirming-erase == index;
+                        ask-erase => { root.confirming-erase = index; }
+                        cancel-erase => { root.confirming-erase = -1; }
+                        restore => { root.confirming-erase = -1; root.restore(index); }
+                        erase => { root.confirming-erase = -1; root.erase(index); }
                     }
                 }
             }
@@ -1319,6 +1368,7 @@ component SettingsScreen inherits Rectangle {
     callback remove-all;
 
     property <bool> confirming-removal: false;
+    in property <string> whats-new: "";
 
     property <bool> installed: root.protection-version != "";
 
@@ -1444,6 +1494,19 @@ component SettingsScreen inherits Rectangle {
             }
         }
 
+        // Lo que cambió, en llano. Las notas tecnicas viven en CHANGELOG.md, que
+        // no va a abrir quien usa el programa.
+        Panel {
+            title: "Qué hay de nuevo";
+
+            Text {
+                text: root.whats-new;
+                font-size: Theme.t-sm;
+                color: Theme.ink-soft;
+                wrap: word-wrap;
+            }
+        }
+
         Panel {
             title: "Acerca de Rhino";
 
@@ -1543,6 +1606,8 @@ export component MainWindow inherits Window {
     background: Theme.ground;
     // Al abrir, el foco empieza en «Inicio»: Tab nunca debe caer primero en un
     // botón que dispare un análisis. Se encadena al FocusScope de la fila.
+    // Lo que cuenta Ajustes en «Qué hay de nuevo», en llano.
+    in property <string> whats-new;
     forward-focus: inicio-row;
 
     // Un solo sitio donde se fija la tipografía: así ningún Text se queda con la
@@ -1944,6 +2009,7 @@ export component MainWindow inherits Window {
                         width: parent.width;
                         height: parent.height;
                         version: root.version;
+                        whats-new: root.whats-new;
                         protection-version: root.protection-version;
                         protection-rules: root.protection-rules;
                         protection-hashes: root.protection-hashes;

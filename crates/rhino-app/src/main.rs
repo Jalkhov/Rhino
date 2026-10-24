@@ -90,9 +90,20 @@ impl ScanShared {
     }
 }
 
+/// Lo que se cuenta en Ajustes, en llano y sin prometer lo que no hace.
+///
+/// Las notas tecnicas viven en `CHANGELOG.md`; esto es lo que lee quien usa el
+/// programa y no va a abrir un repositorio.
+const WHATS_NEW: &str = concat!(
+    "\u{2022} Borrar un archivo apartado ahora pide confirmacion: antes se borraba para siempre con un clic.",
+    "\n\u{2022} Ajustes estrena este panel, para contar los cambios sin tecnicismos.",
+    "\n\u{2022} Rhino ya no se marca a si mismo, ni marca los archivos de reglas (.yar) al analizar: son listas, no programas."
+);
+
 fn main() -> Result<(), slint::PlatformError> {
     let window = MainWindow::new()?;
     window.set_version(rhino_core::VERSION.into());
+    window.set_whats_new(WHATS_NEW.into());
 
     let database = load_database();
     apply_database_state(&window, &database);
