@@ -70,10 +70,13 @@ imágenes, audio y vídeo).
 - **La descarga solo se ha probado en Linux y en depuración**, contra el sitio local con el
   paquete estable. No se ha ejercido en Windows, ni en release, ni con la conexión cortada a
   mitad de los 9 MB.
-- **Deudas menores**: «Borrar» de Poner a salvo no pide confirmación; el aviso de copia
-  repetida mide 372 px y se elide en los 320 del encabezado; el análisis de un archivo suelto
-  no atiende a Detener; en depuración el arranque con paquete tarda unos 20 s porque compila
-  las reglas.
+- **Deudas menores**: el aviso de copia repetida mide 372 px y se elide en los 320 del
+  encabezado; el análisis de un archivo suelto no atiende a Detener; en depuración el arranque
+  con paquete tarda unos 20 s porque compila las reglas.
+- **El desinstalador con un archivo bloqueado ya se ha probado** (un descriptor abierto sin
+  compartir dentro de lo apartado): no se borra nada, la app sigue abierta y dice «No se pudo
+  quitar Rhino: algún archivo no se pudo borrar. Ciérralo y borra su carpeta a mano.» No se ha
+  probado un `.exe` en ejecución de verdad ni un antivirus de terceros reteniendo el archivo.
 
 ## Cómo se comprueba
 

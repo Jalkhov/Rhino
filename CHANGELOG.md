@@ -5,6 +5,21 @@ falla, lee las notas de la entrega; para el relato, la web.
 
 ## Sin publicar
 
+### Añadido
+
+- Ajustes estrena «Qué hay de nuevo»: las novedades contadas en llano dentro del programa.
+  Las notas tecnicas siguen en este archivo, que no va a abrir quien usa el programa.
+  (`d807fe7`)
+- «Borrar» de Poner a salvo pide confirmacion en la propia fila («¿Seguro? Es para
+  siempre.»). Antes borraba para siempre con un clic. (`d807fe7`)
+
+### Corregido
+
+- La fila de Poner a salvo repartia el sobrante vertical entre sus dos textos, asi que el
+  nombre salia pegado arriba y el dato al fondo, con 29 px de hueco donde el espaciado decia
+  3. Alturas explicitas y ramas `if` en vez de `visible`: en un layout un elemento invisible
+  sigue ocupando su hueco. (`d807fe7`)
+
 ## 0.1.0-beta3 — 21-10-2026
 
 ### Corregido
