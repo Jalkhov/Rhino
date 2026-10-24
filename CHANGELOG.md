@@ -3,7 +3,7 @@
 Lo que cambia entre versiones, en seco. Para saber qué puedes probar y qué se sabe que
 falla, lee las notas de la entrega; para el relato, la web.
 
-## Sin publicar
+## 0.1.0-beta4 — 23-10-2026
 
 ### Añadido
 
